@@ -1,23 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { LockOptions } from "proper-lockfile";
-import * as lockfile from "proper-lockfile";
-
-const DEFAULT_LOCK_STALE_MS = 10_000;
-const DEFAULT_LOCK_RETRIES: NonNullable<LockOptions["retries"]> = {
-	retries: 200,
-	factor: 1,
-	minTimeout: 25,
-	maxTimeout: 50,
-	randomize: false,
-};
+import { AsyncKeyedMutex } from "./async-mutex";
 
 interface BaseLockRequest {
 	path: string;
-	staleMs?: number;
-	retries?: LockOptions["retries"];
-	onCompromised?: LockOptions["onCompromised"];
 }
 
 export interface FileLockRequest extends BaseLockRequest {
@@ -33,28 +20,9 @@ export interface DirectoryLockRequest extends BaseLockRequest {
 
 export type LockRequest = FileLockRequest | DirectoryLockRequest;
 
-interface NormalizedLockRequest {
-	path: string;
-	options: LockOptions;
-	sortKey: string;
-}
-
 export interface AtomicTextWriteOptions {
 	lock?: LockRequest | null;
 	executable?: boolean;
-}
-
-function createLockOptions(request: LockRequest, lockfilePath: string): LockOptions {
-	const options: LockOptions = {
-		stale: request.staleMs ?? DEFAULT_LOCK_STALE_MS,
-		retries: request.retries ?? DEFAULT_LOCK_RETRIES,
-		realpath: false,
-		lockfilePath,
-	};
-	if (typeof request.onCompromised === "function") {
-		options.onCompromised = request.onCompromised;
-	}
-	return options;
 }
 
 async function readFileIfExists(path: string): Promise<string | null> {
@@ -68,47 +36,42 @@ async function readFileIfExists(path: string): Promise<string | null> {
 	}
 }
 
-export class LockedFileSystem {
-	private async normalizeLockRequest(request: LockRequest): Promise<NormalizedLockRequest> {
-		if (request.type === "directory") {
-			await mkdir(request.path, { recursive: true });
-			const lockfilePath = request.lockfilePath ?? join(request.path, request.lockfileName ?? ".lock");
-			return {
-				path: request.path,
-				options: createLockOptions(request, lockfilePath),
-				sortKey: lockfilePath,
-			};
-		}
-
-		await mkdir(dirname(request.path), { recursive: true });
-		const lockfilePath = request.lockfilePath ?? `${request.path}.lock`;
-		return {
-			path: request.path,
-			options: createLockOptions(request, lockfilePath),
-			sortKey: lockfilePath,
-		};
+function getLockKey(request: LockRequest): string {
+	if (request.type === "directory") {
+		return request.lockfilePath ?? join(request.path, request.lockfileName ?? ".lock");
 	}
+	return request.lockfilePath ?? `${request.path}.lock`;
+}
+
+export class LockedFileSystem {
+	private mutex = new AsyncKeyedMutex();
 
 	async withLock<T>(request: LockRequest, operation: () => Promise<T>): Promise<T> {
 		return await this.withLocks([request], operation);
 	}
 
 	async withLocks<T>(requests: readonly LockRequest[], operation: () => Promise<T>): Promise<T> {
-		const normalizedRequests = await Promise.all(
-			requests.map(async (request) => await this.normalizeLockRequest(request)),
-		);
-		const orderedRequests = normalizedRequests
-			.slice()
-			.sort((left, right) => left.sortKey.localeCompare(right.sortKey));
-		const releases: Array<() => Promise<void>> = [];
+		// Sort by lock key to prevent deadlocks when acquiring multiple locks
+		const sortedRequests = requests.slice().sort((a, b) => getLockKey(a).localeCompare(getLockKey(b)));
+
+		// Ensure directories exist
+		for (const request of sortedRequests) {
+			if (request.type === "directory") {
+				await mkdir(request.path, { recursive: true });
+			} else {
+				await mkdir(dirname(request.path), { recursive: true });
+			}
+		}
+
+		const releases: Array<() => void> = [];
 		try {
-			for (const request of orderedRequests) {
-				releases.push(await lockfile.lock(request.path, request.options));
+			for (const request of sortedRequests) {
+				releases.push(await this.mutex.acquire(getLockKey(request)));
 			}
 			return await operation();
 		} finally {
 			for (const release of releases.reverse()) {
-				await release();
+				release();
 			}
 		}
 	}

@@ -510,6 +510,60 @@ async function startServer(): Promise<{
 		});
 	};
 
+	// Auto-restart interrupted tasks that were in_progress before shutdown/crash.
+	// Fire-and-forget so it doesn't block the main startup flow.
+	void (async () => {
+		try {
+			const { createTRPCProxyClient, httpBatchLink } = await import("@trpc/client");
+			const { loadWorkspaceState } = await import("./state/workspace-state");
+			const { getTaskColumnId } = await import("./core/task-board-mutations");
+			type AppRouter = import("./trpc/app-router").RuntimeAppRouter;
+			for (const managed of workspaceRegistry.listManagedWorkspaces()) {
+				if (!managed.workspacePath) continue;
+				const interruptedIds = managed.terminalManager.getInterruptedTaskIds();
+				if (interruptedIds.length === 0) continue;
+
+				const state = await loadWorkspaceState(managed.workspacePath);
+				const client = createTRPCProxyClient<AppRouter>({
+					links: [
+						httpBatchLink({
+							url: buildKanbanRuntimeUrl("/api/trpc"),
+							headers: () => ({ "x-kanban-workspace-id": managed.workspaceId }),
+							maxItems: 1,
+						}),
+					],
+				});
+
+				for (const taskId of interruptedIds) {
+					const columnId = getTaskColumnId(state.board, taskId);
+					if (columnId !== "in_progress") continue;
+					const card = state.board.columns.flatMap((c) => c.cards).find((c) => c.id === taskId);
+					if (!card) continue;
+
+					console.log(`Restarting interrupted task: ${taskId}`);
+					try {
+						await client.workspace.ensureWorktree.mutate({
+							taskId: card.id,
+							baseRef: card.baseRef,
+						});
+						await client.runtime.startTaskSession.mutate({
+							taskId: card.id,
+							prompt: `IMPORTANT: We restarted the kanban server. You were working on this task before the restart. Please continue where you left off.\n\n${card.prompt}`,
+							startInPlanMode: card.startInPlanMode,
+							baseRef: card.baseRef,
+						});
+					} catch (err) {
+						const msg = err instanceof Error ? err.message : String(err);
+						console.warn(`Could not restart task ${taskId}: ${msg}`);
+					}
+				}
+			}
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			console.warn(`Task auto-restart failed: ${msg}`);
+		}
+	})();
+
 	return {
 		url: runtimeServer.url,
 		close,

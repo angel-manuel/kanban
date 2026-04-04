@@ -73,14 +73,14 @@ interface TerminalStreamState {
 	detachOutputListener: (() => void) | null;
 }
 
-const OUTPUT_BATCH_INTERVAL_MS = 4;
+const OUTPUT_BATCH_INTERVAL_MS = 100;
 const LOW_LATENCY_CHUNK_BYTES = 256;
 const LOW_LATENCY_IDLE_WINDOW_MS = 5;
 const OUTPUT_BUFFER_HIGH_WATER_MARK_BYTES = 16 * 1024;
 const OUTPUT_BUFFER_LOW_WATER_MARK_BYTES = Math.floor(OUTPUT_BUFFER_HIGH_WATER_MARK_BYTES / 4);
 const OUTPUT_ACK_HIGH_WATER_MARK_BYTES = 100_000;
 const OUTPUT_ACK_LOW_WATER_MARK_BYTES = 5_000;
-const OUTPUT_RESUME_CHECK_INTERVAL_MS = 16;
+const OUTPUT_RESUME_CHECK_INTERVAL_MS = 500;
 
 function getWebSocketTransportSocket(ws: WebSocket): Socket | null {
 	const transportSocket = (ws as WebSocket & { _socket?: Socket })._socket;
