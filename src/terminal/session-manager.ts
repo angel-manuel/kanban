@@ -244,8 +244,17 @@ export class TerminalSessionManager implements TerminalSessionService {
 
 	hydrateFromRecord(record: Record<string, RuntimeTaskSessionSummary>): void {
 		for (const [taskId, summary] of Object.entries(record)) {
+			const hydrated = cloneSummary(summary);
+			// After a restart, no PTY processes exist. Mark any session that claims
+			// to be running/awaiting_review as interrupted so they can be restarted.
+			if (hydrated.state === "running" || hydrated.state === "awaiting_review") {
+				hydrated.state = "interrupted";
+				hydrated.reviewReason = "interrupted";
+				hydrated.pid = null;
+				hydrated.updatedAt = Date.now();
+			}
 			this.entries.set(taskId, {
-				summary: cloneSummary(summary),
+				summary: hydrated,
 				active: null,
 				terminalStateMirror: null,
 				listenerIdCounter: 1,
@@ -256,6 +265,17 @@ export class TerminalSessionManager implements TerminalSessionService {
 				pendingAutoRestart: null,
 			});
 		}
+	}
+
+	/** Returns task IDs of sessions marked interrupted (candidates for auto-restart). */
+	getInterruptedTaskIds(): string[] {
+		const ids: string[] = [];
+		for (const [taskId, entry] of this.entries) {
+			if (entry.summary.state === "interrupted" && entry.active === null) {
+				ids.push(taskId);
+			}
+		}
+		return ids;
 	}
 
 	getSummary(taskId: string): RuntimeTaskSessionSummary | null {
@@ -707,7 +727,7 @@ export class TerminalSessionManager implements TerminalSessionService {
 		if (!entry) {
 			return null;
 		}
-		if (entry.active || !isActiveState(entry.summary.state)) {
+		if (entry.active || (!isActiveState(entry.summary.state) && entry.summary.state !== "interrupted")) {
 			return cloneSummary(entry.summary);
 		}
 

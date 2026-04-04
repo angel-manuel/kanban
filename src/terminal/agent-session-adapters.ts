@@ -93,20 +93,30 @@ function resolveHookContext(input: AgentAdapterLaunchInput): HookContext | null 
 }
 
 function buildHookCommand(event: RuntimeHookEvent, metadata?: HookCommandMetadata): string {
-	const parts = buildHooksCommandParts(["ingest", "--event", event]);
+	const metadataObj: Record<string, string> = {};
 	if (metadata?.source) {
-		parts.push("--source", metadata.source);
+		metadataObj.source = metadata.source;
 	}
 	if (metadata?.activityText) {
-		parts.push("--activity-text", metadata.activityText);
+		metadataObj.activityText = metadata.activityText;
 	}
 	if (metadata?.hookEventName) {
-		parts.push("--hook-event-name", metadata.hookEventName);
+		metadataObj.hookEventName = metadata.hookEventName;
 	}
 	if (metadata?.notificationType) {
-		parts.push("--notification-type", metadata.notificationType);
+		metadataObj.notificationType = metadata.notificationType;
 	}
-	return parts.map(quoteShellArg).join(" ");
+	const metadataJson = Object.keys(metadataObj).length > 0 ? JSON.stringify(metadataObj) : "";
+	const metadataField = metadataJson ? `,"metadata":${metadataJson}` : "";
+	// Use curl instead of spawning a full kanban Node process (~0.9s startup) per hook event.
+	// The env vars KANBAN_HOOK_TASK_ID, KANBAN_HOOK_WORKSPACE_ID, KANBAN_RUNTIME_HOST, and
+	// KANBAN_RUNTIME_PORT are inherited by the Claude agent process.
+	return (
+		`curl -sf -X POST -H 'Content-Type: application/json' ` +
+		`-d '{"taskId":"'$KANBAN_HOOK_TASK_ID'","workspaceId":"'$KANBAN_HOOK_WORKSPACE_ID'","event":"${event}"${metadataField}}' ` +
+		`"http://\${KANBAN_RUNTIME_HOST:-127.0.0.1}:\${KANBAN_RUNTIME_PORT:-3484}/api/trpc/hooks.ingest" ` +
+		`>/dev/null 2>&1 || true`
+	);
 }
 
 function buildHooksCommandParts(args: string[]): string[] {

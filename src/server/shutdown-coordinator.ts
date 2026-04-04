@@ -13,7 +13,7 @@ export interface RuntimeShutdownCoordinatorDependencies {
 	skipSessionCleanup?: boolean;
 }
 
-function moveTaskToTrash(
+function _moveTaskToTrash(
 	board: RuntimeWorkspaceStateResponse["board"],
 	taskId: string,
 ): RuntimeWorkspaceStateResponse["board"] {
@@ -65,12 +65,8 @@ async function persistInterruptedSessions(
 		return [];
 	}
 	const workspaceState = options?.workspaceState ?? (await loadWorkspaceState(workspacePath));
-	const worktreeTaskIds = collectProjectWorktreeTaskIdsForRemoval(workspaceState.board);
-	const worktreeTaskIdsToCleanup = interruptedTaskIds.filter((taskId) => worktreeTaskIds.has(taskId));
-	let nextBoard = workspaceState.board;
-	for (const taskId of interruptedTaskIds) {
-		nextBoard = moveTaskToTrash(nextBoard, taskId);
-	}
+	// Keep tasks in their current column (don't move to trash) so they can
+	// be auto-restarted on the next startup.
 	const nextSessions = {
 		...workspaceState.sessions,
 	};
@@ -87,10 +83,10 @@ async function persistInterruptedSessions(
 		}
 	}
 	await saveWorkspaceState(workspacePath, {
-		board: nextBoard,
+		board: workspaceState.board,
 		sessions: nextSessions,
 	});
-	return worktreeTaskIdsToCleanup;
+	return [];
 }
 
 async function cleanupInterruptedTaskWorktrees(

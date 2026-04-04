@@ -1,9 +1,9 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { join } from "node:path";
-
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
+import * as lockfile from "proper-lockfile";
 import { handleClineMcpOauthCallback } from "../cline-sdk/cline-mcp-runtime-service";
 import {
 	type ClineTaskSessionService,
@@ -36,7 +36,7 @@ import {
 	validatePasscode,
 	validateSession,
 } from "../security/passcode-manager";
-import { loadWorkspaceContextById } from "../state/workspace-state";
+import { getRuntimeHomePath, loadWorkspaceContextById } from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { createTerminalWebSocketBridge } from "../terminal/ws-server";
 import { type RuntimeTrpcContext, type RuntimeTrpcWorkspaceScope, runtimeAppRouter } from "../trpc/app-router";
@@ -483,6 +483,28 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 			resolveListen();
 		});
 	});
+
+	// Acquire process-lifetime lock after binding the port.
+	// This guards against multiple instances on different ports accessing the same state.
+	// Placed after listen so that port-conflict detection (and redirect-to-existing) still works.
+	const runtimeHome = getRuntimeHomePath();
+	await mkdir(runtimeHome, { recursive: true });
+	const lockPath = join(runtimeHome, "kanban.lock");
+	await writeFile(lockPath, String(process.pid), "utf8").catch(() => {});
+	try {
+		await lockfile.lock(lockPath, {
+			stale: 30_000,
+			update: 5_000,
+			retries: 0,
+			realpath: false,
+			onCompromised: (_err: Error) => {
+				// Lock compromised — ignored; the process will continue running.
+			},
+		});
+	} catch {
+		server.close();
+		throw new Error("Another kanban instance is already running.");
+	}
 
 	const address = server.address();
 	if (!address || typeof address === "string") {
