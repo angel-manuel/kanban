@@ -47,6 +47,7 @@ import { createWorkspaceApi } from "../trpc/workspace-api";
 import { getWebUiDir, normalizeRequestPath, readAsset } from "./assets";
 import { handleHttpRequest, handleSocketUpgrade } from "./middleware";
 import type { RuntimeStateHub } from "./runtime-state-hub";
+import { createStallWatchdog } from "./stall-watchdog";
 import type { WorkspaceRegistry } from "./workspace-registry";
 
 interface DisposeTrackedWorkspaceResult {
@@ -515,9 +516,17 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		? buildKanbanRuntimeUrl(`/${encodeURIComponent(activeWorkspaceId)}`)
 		: getKanbanRuntimeOrigin();
 
+	// Recover claude sessions stuck on the "Response stalled mid-stream" API error.
+	const stallWatchdog = createStallWatchdog({
+		listManagedWorkspaces: deps.workspaceRegistry.listManagedWorkspaces,
+		log: (message) => deps.warn(`[stall-watchdog] ${message}`),
+	});
+	stallWatchdog.start();
+
 	return {
 		url,
 		close: async () => {
+			stallWatchdog.close();
 			await Promise.all(
 				Array.from(clineTaskSessionServiceByWorkspaceId.values()).map(async (service) => {
 					await service.dispose();
