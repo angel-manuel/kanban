@@ -620,17 +620,13 @@ const claudeAdapter: AgentSessionAdapter = {
 			FORCE_HYPERLINK: "1",
 		};
 		const appendedSystemPrompt = resolveHomeAgentAppendSystemPrompt(input.taskId);
-		if (input.autonomousModeEnabled) {
-			// Auto mode is gated behind this env var on Bedrock/Vertex/Foundry; the Anthropic API ignores it.
-			env.CLAUDE_CODE_ENABLE_AUTO_MODE = "1";
-		}
 		if (
 			input.autonomousModeEnabled &&
 			!input.startInPlanMode &&
 			!hasCliOption(args, "--permission-mode") &&
 			!hasCliOption(args, "--dangerously-skip-permissions")
 		) {
-			args.push("--permission-mode", "auto");
+			args.push("--dangerously-skip-permissions");
 		}
 		if (input.resumeFromTrash && !hasCliOption(args, "--continue")) {
 			args.push("--continue");
