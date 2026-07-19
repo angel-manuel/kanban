@@ -816,11 +816,16 @@ export class TerminalSessionManager implements TerminalSessionService {
 		if (!entry) {
 			return null;
 		}
-		if (reason !== "hook") {
+		// Only the hook path and the stall watchdog's unrecoverable-error path can park a
+		// session for review; every other reason comes from process exit.
+		if (reason !== "hook" && reason !== "error") {
 			return cloneSummary(entry.summary);
 		}
 		const before = entry.summary;
-		const summary = this.applySessionEvent(entry, { type: "hook.to_review" });
+		const summary = this.applySessionEvent(
+			entry,
+			reason === "hook" ? { type: "hook.to_review" } : { type: "agent.error-detected" },
+		);
 		if (summary !== before && entry.active) {
 			for (const listener of entry.listeners.values()) {
 				listener.onState?.(cloneSummary(summary));
