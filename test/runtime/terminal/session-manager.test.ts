@@ -44,6 +44,36 @@ describe("TerminalSessionManager", () => {
 		expect(entry.active.workspaceTrustBuffer).toBe("");
 	});
 
+	it("parks a session for review when the watchdog reports an unrecoverable agent error", () => {
+		const manager = new TerminalSessionManager();
+		const entry = {
+			summary: createSummary({ state: "running", reviewReason: null }),
+			active: {
+				workspaceTrustBuffer: "",
+				awaitingCodexPromptAfterEnter: false,
+			},
+			listenerIdCounter: 1,
+			listeners: new Map(),
+		};
+		const applySessionEvent = (
+			manager as unknown as {
+				applySessionEvent: (
+					sessionEntry: unknown,
+					event: { type: "agent.error-detected" },
+				) => RuntimeTaskSessionSummary;
+			}
+		).applySessionEvent;
+		const nextSummary = applySessionEvent(entry, { type: "agent.error-detected" });
+		expect(nextSummary.state).toBe("awaiting_review");
+		expect(nextSummary.reviewReason).toBe("error");
+	});
+
+	it("ignores review transitions for reasons that only process exit can produce", () => {
+		const manager = new TerminalSessionManager();
+		manager.hydrateFromRecord({ "task-1": createSummary({ state: "idle" }) });
+		expect(manager.transitionToReview("task-1", "exit")?.state).toBe("idle");
+	});
+
 	it("builds shell kickoff command lines with quoted arguments", () => {
 		const commandLine = buildShellCommandLine("cline", ["--auto-approve-all", "hello world"]);
 		expect(commandLine).toContain("cline");

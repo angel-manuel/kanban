@@ -516,9 +516,11 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		? buildKanbanRuntimeUrl(`/${encodeURIComponent(activeWorkspaceId)}`)
 		: getKanbanRuntimeOrigin();
 
-	// Recover claude sessions stuck on the "Response stalled mid-stream" API error.
+	// Recover claude sessions frozen on a retryable API error, and flag the ones stuck on
+	// an error no nudge can fix.
 	const stallWatchdog = createStallWatchdog({
 		listManagedWorkspaces: deps.workspaceRegistry.listManagedWorkspaces,
+		notifyReviewReady: deps.runtimeStateHub.broadcastTaskReadyForReview,
 		log: (message) => deps.warn(`[stall-watchdog] ${message}`),
 	});
 	stallWatchdog.start();
