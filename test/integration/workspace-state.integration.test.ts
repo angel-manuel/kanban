@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { RuntimeBoardData, RuntimeTaskSessionSummary } from "../../src/core/api-contract";
 import type { WorkspaceStateConflictError } from "../../src/state/workspace-state";
@@ -369,6 +369,76 @@ describe.sequential("workspace-state integration", () => {
 
 			await expect(listWorkspaceIndexEntries()).rejects.toThrow("index.json");
 			await expect(listWorkspaceIndexEntries()).rejects.toThrow("repoPath");
+		});
+	});
+
+	it("hands onBoardReplaced the previously persisted board and the one that replaced it", async () => {
+		await withTemporaryHome(async () => {
+			const { path: sandboxRoot, cleanup } = createTempDir("kanban-workspace-board-replaced-");
+			try {
+				const workspacePath = join(sandboxRoot, "project-board-replaced");
+				mkdirSync(workspacePath, { recursive: true });
+				initGitRepository(workspacePath);
+
+				await saveWorkspaceState(workspacePath, {
+					board: createBoard("Task One"),
+					sessions: {},
+				});
+
+				const replacements: Array<{ previous: RuntimeBoardData; next: RuntimeBoardData }> = [];
+				const nextBoard = createBoard("Task Two");
+				await saveWorkspaceState(
+					workspacePath,
+					{
+						board: nextBoard,
+						sessions: {},
+					},
+					{
+						onBoardReplaced: (previous, next) => {
+							replacements.push({ previous, next });
+						},
+					},
+				);
+
+				expect(replacements).toHaveLength(1);
+				expect(replacements[0]?.previous.columns[0]?.cards[0]?.prompt).toBe("Task One");
+				expect(replacements[0]?.next.columns[0]?.cards[0]?.prompt).toBe("Task Two");
+			} finally {
+				cleanup();
+			}
+		});
+	});
+
+	it("does not report a board replacement when the save is rejected as stale", async () => {
+		await withTemporaryHome(async () => {
+			const { path: sandboxRoot, cleanup } = createTempDir("kanban-workspace-board-conflict-");
+			try {
+				const workspacePath = join(sandboxRoot, "project-board-conflict");
+				mkdirSync(workspacePath, { recursive: true });
+				initGitRepository(workspacePath);
+
+				const saved = await saveWorkspaceState(workspacePath, {
+					board: createBoard("Task One"),
+					sessions: {},
+				});
+
+				const onBoardReplaced = vi.fn();
+				await expect(
+					saveWorkspaceState(
+						workspacePath,
+						{
+							board: createBoard("Stale Task"),
+							sessions: {},
+							expectedRevision: saved.revision - 1,
+						},
+						{ onBoardReplaced },
+					),
+				).rejects.toThrow();
+
+				expect(onBoardReplaced).not.toHaveBeenCalled();
+			} finally {
+				cleanup();
+			}
 		});
 	});
 });
