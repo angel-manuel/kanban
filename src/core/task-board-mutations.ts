@@ -36,6 +36,12 @@ export interface RuntimeUpdateTaskInput {
 	baseRef: string;
 }
 
+/**
+ * Column that holds finished tasks. The board renders it as "Done"; the persisted
+ * column id has always been "trash".
+ */
+const FINISHED_TASK_COLUMN_ID = "trash" satisfies RuntimeBoardColumnId;
+
 function normalizeTaskAutoReviewMode(value: RuntimeTaskAutoReviewMode | null | undefined): RuntimeTaskAutoReviewMode {
 	if (value === "pr") {
 		return value;
@@ -186,7 +192,7 @@ function resolveDependencyEndpoints(
 	if (!firstColumnId || !secondColumnId) {
 		return { reason: "missing_task" };
 	}
-	if (firstColumnId === "trash" || secondColumnId === "trash") {
+	if (firstColumnId === FINISHED_TASK_COLUMN_ID || secondColumnId === FINISHED_TASK_COLUMN_ID) {
 		return { reason: "trash_task" };
 	}
 	const firstIsBacklog = firstColumnId === "backlog";
@@ -410,6 +416,31 @@ export function removeTaskDependency(board: RuntimeBoardData, dependencyId: stri
 	};
 }
 
+function getFinishedTaskIds(board: RuntimeBoardData): Set<string> {
+	const finishedColumn = board.columns.find((column) => column.id === FINISHED_TASK_COLUMN_ID);
+	return new Set(finishedColumn?.cards.map((card) => card.id) ?? []);
+}
+
+/**
+ * Task ids that sit in the finished column of `nextBoard` but did not in `previousBoard`.
+ *
+ * The board is persisted as a whole snapshot, so a task reaching "Done" is otherwise
+ * indistinguishable from any other save. This is what lets finished-task cleanup - reclaiming
+ * the task worktree in particular - hang off a plain state save rather than off each of the
+ * routes that can move a card into that column.
+ */
+export function getTaskIdsEnteringFinishedColumn(
+	previousBoard: RuntimeBoardData,
+	nextBoard: RuntimeBoardData,
+): string[] {
+	const previouslyFinishedTaskIds = getFinishedTaskIds(previousBoard);
+	const nextFinishedColumn = nextBoard.columns.find((column) => column.id === FINISHED_TASK_COLUMN_ID);
+	if (!nextFinishedColumn) {
+		return [];
+	}
+	return nextFinishedColumn.cards.filter((card) => !previouslyFinishedTaskIds.has(card.id)).map((card) => card.id);
+}
+
 export function getReadyLinkedTaskIdsForTaskInTrash(board: RuntimeBoardData, taskId: string): string[] {
 	return getLinkedBacklogTaskIdsReadyAfterTaskTrashed(board, taskId, getTaskColumnId(board, taskId));
 }
@@ -421,7 +452,7 @@ export function trashTaskAndGetReadyLinkedTaskIds(
 ): RuntimeTrashTaskResult {
 	const fromColumnId = getTaskColumnId(board, taskId);
 	const readyTaskIds = getLinkedBacklogTaskIdsReadyAfterTaskTrashed(board, taskId, fromColumnId);
-	const movedToTrash = moveTaskToColumn(board, taskId, "trash", now);
+	const movedToTrash = moveTaskToColumn(board, taskId, FINISHED_TASK_COLUMN_ID, now);
 	return {
 		...movedToTrash,
 		readyTaskIds: movedToTrash.moved ? readyTaskIds : [],
@@ -545,7 +576,9 @@ export function moveTaskToColumn(
 		updatedAt: now,
 	};
 	const targetCards =
-		targetColumnId === "trash" ? [movedTask, ...targetColumn.cards] : [...targetColumn.cards, movedTask];
+		targetColumnId === FINISHED_TASK_COLUMN_ID
+			? [movedTask, ...targetColumn.cards]
+			: [...targetColumn.cards, movedTask];
 
 	const columns = board.columns.map((column, index) => {
 		if (index === found.columnIndex) {

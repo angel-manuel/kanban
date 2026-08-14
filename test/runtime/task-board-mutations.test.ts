@@ -5,6 +5,7 @@ import {
 	addTaskDependency,
 	addTaskToColumn,
 	deleteTasksFromBoard,
+	getTaskIdsEnteringFinishedColumn,
 	moveTaskToColumn,
 	trashTaskAndGetReadyLinkedTaskIds,
 	updateTask,
@@ -270,5 +271,61 @@ describe("per-task agent/model/provider overrides", () => {
 			modelId: "claude-sonnet-4-20250514",
 			reasoningEffort: "high",
 		});
+	});
+});
+
+describe("getTaskIdsEnteringFinishedColumn", () => {
+	function createBoardWithTasks(): RuntimeBoardData {
+		const createA = addTaskToColumn(
+			createBoard(),
+			"in_progress",
+			{ prompt: "Task A", baseRef: "main" },
+			() => "aaaaa111",
+		);
+		const createB = addTaskToColumn(createA.board, "review", { prompt: "Task B", baseRef: "main" }, () => "bbbbb111");
+		return addTaskToColumn(createB.board, "trash", { prompt: "Task C", baseRef: "main" }, () => "ccccc111").board;
+	}
+
+	it("reports a task moved into the done column", () => {
+		const board = createBoardWithTasks();
+		const trashed = trashTaskAndGetReadyLinkedTaskIds(board, "aaaaa");
+
+		expect(getTaskIdsEnteringFinishedColumn(board, trashed.board)).toEqual(["aaaaa"]);
+	});
+
+	it("reports every task moved into the done column at once", () => {
+		const board = createBoardWithTasks();
+		const trashedA = trashTaskAndGetReadyLinkedTaskIds(board, "aaaaa");
+		const trashedB = trashTaskAndGetReadyLinkedTaskIds(trashedA.board, "bbbbb");
+
+		expect(getTaskIdsEnteringFinishedColumn(board, trashedB.board).sort()).toEqual(["aaaaa", "bbbbb"]);
+	});
+
+	it("ignores tasks that were already done", () => {
+		const board = createBoardWithTasks();
+		const reordered = moveTaskToColumn(board, "ccccc", "trash");
+
+		expect(getTaskIdsEnteringFinishedColumn(board, reordered.board)).toEqual([]);
+	});
+
+	it("ignores moves between the working columns", () => {
+		const board = createBoardWithTasks();
+		const moved = moveTaskToColumn(board, "aaaaa", "review");
+
+		expect(getTaskIdsEnteringFinishedColumn(board, moved.board)).toEqual([]);
+	});
+
+	it("does not report a task pulled back out of the done column", () => {
+		const board = createBoardWithTasks();
+		const resumed = moveTaskToColumn(board, "ccccc", "review");
+
+		expect(getTaskIdsEnteringFinishedColumn(board, resumed.board)).toEqual([]);
+	});
+
+	it("does not report a task deleted from the done column", () => {
+		const board = createBoardWithTasks();
+		const deleted = deleteTasksFromBoard(board, ["ccccc"]);
+
+		expect(getTaskIdsEnteringFinishedColumn(board, deleted.board)).toEqual([]);
 	});
 });
