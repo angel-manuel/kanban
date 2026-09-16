@@ -21,6 +21,7 @@ export interface RuntimeCreateTaskInput {
 	images?: RuntimeTaskImage[];
 	agentId?: RuntimeAgentId;
 	clineSettings?: RuntimeTaskClineSettings;
+	unattended?: boolean;
 	baseRef: string;
 }
 
@@ -33,6 +34,7 @@ export interface RuntimeUpdateTaskInput {
 	images?: RuntimeTaskImage[];
 	agentId?: RuntimeAgentId | null;
 	clineSettings?: RuntimeTaskClineSettings | null;
+	unattended?: boolean;
 	baseRef: string;
 }
 
@@ -315,6 +317,7 @@ export function addTaskToColumn(
 		images: cloneTaskImages(input.images),
 		...(input.agentId ? { agentId: input.agentId } : {}),
 		...(input.clineSettings !== undefined ? { clineSettings: cloneTaskClineSettings(input.clineSettings) } : {}),
+		...(input.unattended ? { unattended: true } : {}),
 		baseRef,
 		createdAt: now,
 		updatedAt: now,
@@ -663,6 +666,15 @@ export function updateTask(
 						: input.clineSettings === null
 							? undefined
 							: cloneTaskClineSettings(input.clineSettings),
+				// Omitting the field leaves the card's current mode alone; an explicit false
+				// drops the key entirely so an attended card never carries a dead flag.
+				...(input.unattended === undefined
+					? card.unattended
+						? { unattended: true }
+						: {}
+					: input.unattended
+						? { unattended: true }
+						: {}),
 				baseRef,
 				updatedAt: now,
 			};
@@ -686,5 +698,57 @@ export function updateTask(
 		},
 		task: updatedTask,
 		updated: true,
+	};
+}
+
+/**
+ * Flips a task between browser-driven and server-driven board automation.
+ *
+ * Kept separate from `updateTask` because that function rewrites the whole card from its
+ * input, so callers that only want to hand a task over - the unattended driver parking a
+ * run, or a user taking one back - would otherwise have to resupply every field.
+ */
+export function setTaskUnattended(
+	board: RuntimeBoardData,
+	taskId: string,
+	unattended: boolean,
+	now: number = Date.now(),
+): RuntimeUpdateTaskResult {
+	const normalizedTaskId = taskId.trim();
+	if (!normalizedTaskId) {
+		return { board, task: null, updated: false };
+	}
+
+	let updatedTask: RuntimeBoardCard | null = null;
+	const columns = board.columns.map((column) => {
+		let columnUpdated = false;
+		const cards = column.cards.map((card) => {
+			if (card.id !== normalizedTaskId) {
+				return card;
+			}
+			if (Boolean(card.unattended) === unattended) {
+				updatedTask = card;
+				return card;
+			}
+			columnUpdated = true;
+			const { unattended: _previous, ...rest } = card;
+			updatedTask = {
+				...rest,
+				...(unattended ? { unattended: true } : {}),
+				updatedAt: now,
+			};
+			return updatedTask;
+		});
+		return columnUpdated ? { ...column, cards } : column;
+	});
+
+	if (!updatedTask) {
+		return { board, task: null, updated: false };
+	}
+	const changed = columns.some((column, index) => column !== board.columns[index]);
+	return {
+		board: changed ? { ...board, columns } : board,
+		task: updatedTask,
+		updated: changed,
 	};
 }

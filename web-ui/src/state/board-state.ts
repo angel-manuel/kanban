@@ -158,6 +158,7 @@ function normalizeCard(rawCard: unknown): BoardCard | null {
 		images?: unknown;
 		baseRef?: unknown;
 		agentId?: unknown;
+		unattended?: unknown;
 		clineSettings?: unknown;
 		clineProviderId?: unknown;
 		clineModelId?: unknown;
@@ -198,6 +199,10 @@ function normalizeCard(rawCard: unknown): BoardCard | null {
 		images: normalizeTaskImages(card.images),
 		baseRef,
 		...(typeof card.agentId === "string" && card.agentId ? { agentId: card.agentId as RuntimeAgentId } : {}),
+		// Must be carried through: this normalizer whitelists fields, and the board it
+		// produces is what the debounced saveState writes back. Dropping the flag here
+		// would silently hand a server-driven task back to the browser mid-run.
+		...(card.unattended === true ? { unattended: true } : {}),
 		...(clineSettings !== undefined ? { clineSettings } : {}),
 		createdAt: typeof card.createdAt === "number" ? card.createdAt : now,
 		updatedAt: typeof card.updatedAt === "number" ? card.updatedAt : now,

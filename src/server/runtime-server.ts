@@ -36,18 +36,27 @@ import {
 	validatePasscode,
 	validateSession,
 } from "../security/passcode-manager";
-import { getRuntimeHomePath, loadWorkspaceContextById } from "../state/workspace-state";
+import {
+	getRuntimeHomePath,
+	loadWorkspaceBoardById,
+	loadWorkspaceContextById,
+	mutateWorkspaceState,
+} from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import { createTerminalWebSocketBridge } from "../terminal/ws-server";
 import { type RuntimeTrpcContext, type RuntimeTrpcWorkspaceScope, runtimeAppRouter } from "../trpc/app-router";
 import { createHooksApi } from "../trpc/hooks-api";
 import { createProjectsApi } from "../trpc/projects-api";
 import { createRuntimeApi } from "../trpc/runtime-api";
-import { createWorkspaceApi } from "../trpc/workspace-api";
+import { createWorkspaceApi, selectLastTurnSummary } from "../trpc/workspace-api";
+import { getGitSyncSummary } from "../workspace/git-sync";
+import { reclaimFinishedTaskWorktrees } from "../workspace/reclaim-finished-task-worktrees";
+import { getTaskWorkspaceInfo } from "../workspace/task-worktree";
 import { getWebUiDir, normalizeRequestPath, readAsset } from "./assets";
 import { handleHttpRequest, handleSocketUpgrade } from "./middleware";
 import type { RuntimeStateHub } from "./runtime-state-hub";
 import { createStallWatchdog } from "./stall-watchdog";
+import { createUnattendedTaskDriver } from "./unattended-task-driver";
 import type { WorkspaceRegistry } from "./workspace-registry";
 
 interface DisposeTrackedWorkspaceResult {
@@ -189,65 +198,74 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		deps.workspaceRegistry.clearActiveWorkspace();
 	};
 
+	// Built once rather than per request: every factory is a pure closure over `deps` and
+	// none of them reads the request. Holding single instances also lets background
+	// services call the same runtime API the router does, instead of looping back over
+	// HTTP to this process.
+	const runtimeApi = createRuntimeApi({
+		getActiveWorkspaceId: deps.workspaceRegistry.getActiveWorkspaceId,
+		getActiveRuntimeConfig: deps.workspaceRegistry.getActiveRuntimeConfig,
+		loadScopedRuntimeConfig: deps.workspaceRegistry.loadScopedRuntimeConfig,
+		setActiveRuntimeConfig: deps.workspaceRegistry.setActiveRuntimeConfig,
+		getScopedTerminalManager,
+		getScopedClineTaskSessionService,
+		resolveInteractiveShellCommand: deps.resolveInteractiveShellCommand,
+		runCommand: deps.runCommand,
+		broadcastClineMcpAuthStatusesUpdated: deps.runtimeStateHub.broadcastClineMcpAuthStatusesUpdated,
+		broadcastTaskChatCleared: deps.runtimeStateHub.broadcastTaskChatCleared,
+		bumpClineSessionContextVersion: deps.runtimeStateHub.bumpClineSessionContextVersion,
+		prepareForStateReset,
+		getUpdateStatus: deps.getUpdateStatus,
+		runUpdateNow: deps.runUpdateNow,
+	});
+	const workspaceApi = createWorkspaceApi({
+		ensureTerminalManagerForWorkspace: deps.ensureTerminalManagerForWorkspace,
+		getScopedClineTaskSessionService,
+		broadcastRuntimeWorkspaceStateUpdated: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
+		broadcastRuntimeProjectsUpdated: deps.runtimeStateHub.broadcastRuntimeProjectsUpdated,
+		buildWorkspaceStateSnapshot: deps.workspaceRegistry.buildWorkspaceStateSnapshot,
+		warn: deps.warn,
+	});
+	const projectsApi = createProjectsApi({
+		getActiveWorkspacePath: deps.workspaceRegistry.getActiveWorkspacePath,
+		getActiveWorkspaceId: deps.workspaceRegistry.getActiveWorkspaceId,
+		rememberWorkspace: deps.workspaceRegistry.rememberWorkspace,
+		setActiveWorkspace: deps.workspaceRegistry.setActiveWorkspace,
+		clearActiveWorkspace: deps.workspaceRegistry.clearActiveWorkspace,
+		resolveProjectInputPath: deps.resolveProjectInputPath,
+		assertPathIsDirectory: deps.assertPathIsDirectory,
+		hasGitRepository: deps.hasGitRepository,
+		summarizeProjectTaskCounts: deps.workspaceRegistry.summarizeProjectTaskCounts,
+		createProjectSummary: deps.workspaceRegistry.createProjectSummary,
+		broadcastRuntimeProjectsUpdated: deps.runtimeStateHub.broadcastRuntimeProjectsUpdated,
+		getTerminalManagerForWorkspace: deps.workspaceRegistry.getTerminalManagerForWorkspace,
+		disposeWorkspace: (workspaceId, options) => {
+			disposeClineTaskSessionService(workspaceId);
+			return deps.disposeWorkspace(workspaceId, options);
+		},
+		collectProjectWorktreeTaskIdsForRemoval: deps.collectProjectWorktreeTaskIdsForRemoval,
+		warn: deps.warn,
+		buildProjectsPayload: deps.workspaceRegistry.buildProjectsPayload,
+		pickDirectoryPathFromSystemDialog: deps.pickDirectoryPathFromSystemDialog,
+		serverCwd: process.cwd(),
+	});
+	const hooksApi = createHooksApi({
+		getWorkspacePathById: deps.workspaceRegistry.getWorkspacePathById,
+		ensureTerminalManagerForWorkspace: deps.ensureTerminalManagerForWorkspace,
+		broadcastRuntimeWorkspaceStateUpdated: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
+		broadcastTaskReadyForReview: deps.runtimeStateHub.broadcastTaskReadyForReview,
+	});
+
 	const createTrpcContext = async (req: IncomingMessage): Promise<RuntimeTrpcContext> => {
 		const requestUrl = new URL(req.url ?? "/", "http://localhost");
 		const scope = await resolveWorkspaceScopeFromRequest(req, requestUrl);
 		return {
 			requestedWorkspaceId: scope.requestedWorkspaceId,
 			workspaceScope: scope.workspaceScope,
-			runtimeApi: createRuntimeApi({
-				getActiveWorkspaceId: deps.workspaceRegistry.getActiveWorkspaceId,
-				getActiveRuntimeConfig: deps.workspaceRegistry.getActiveRuntimeConfig,
-				loadScopedRuntimeConfig: deps.workspaceRegistry.loadScopedRuntimeConfig,
-				setActiveRuntimeConfig: deps.workspaceRegistry.setActiveRuntimeConfig,
-				getScopedTerminalManager,
-				getScopedClineTaskSessionService,
-				resolveInteractiveShellCommand: deps.resolveInteractiveShellCommand,
-				runCommand: deps.runCommand,
-				broadcastClineMcpAuthStatusesUpdated: deps.runtimeStateHub.broadcastClineMcpAuthStatusesUpdated,
-				broadcastTaskChatCleared: deps.runtimeStateHub.broadcastTaskChatCleared,
-				bumpClineSessionContextVersion: deps.runtimeStateHub.bumpClineSessionContextVersion,
-				prepareForStateReset,
-				getUpdateStatus: deps.getUpdateStatus,
-				runUpdateNow: deps.runUpdateNow,
-			}),
-			workspaceApi: createWorkspaceApi({
-				ensureTerminalManagerForWorkspace: deps.ensureTerminalManagerForWorkspace,
-				getScopedClineTaskSessionService,
-				broadcastRuntimeWorkspaceStateUpdated: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
-				broadcastRuntimeProjectsUpdated: deps.runtimeStateHub.broadcastRuntimeProjectsUpdated,
-				buildWorkspaceStateSnapshot: deps.workspaceRegistry.buildWorkspaceStateSnapshot,
-				warn: deps.warn,
-			}),
-			projectsApi: createProjectsApi({
-				getActiveWorkspacePath: deps.workspaceRegistry.getActiveWorkspacePath,
-				getActiveWorkspaceId: deps.workspaceRegistry.getActiveWorkspaceId,
-				rememberWorkspace: deps.workspaceRegistry.rememberWorkspace,
-				setActiveWorkspace: deps.workspaceRegistry.setActiveWorkspace,
-				clearActiveWorkspace: deps.workspaceRegistry.clearActiveWorkspace,
-				resolveProjectInputPath: deps.resolveProjectInputPath,
-				assertPathIsDirectory: deps.assertPathIsDirectory,
-				hasGitRepository: deps.hasGitRepository,
-				summarizeProjectTaskCounts: deps.workspaceRegistry.summarizeProjectTaskCounts,
-				createProjectSummary: deps.workspaceRegistry.createProjectSummary,
-				broadcastRuntimeProjectsUpdated: deps.runtimeStateHub.broadcastRuntimeProjectsUpdated,
-				getTerminalManagerForWorkspace: deps.workspaceRegistry.getTerminalManagerForWorkspace,
-				disposeWorkspace: (workspaceId, options) => {
-					disposeClineTaskSessionService(workspaceId);
-					return deps.disposeWorkspace(workspaceId, options);
-				},
-				collectProjectWorktreeTaskIdsForRemoval: deps.collectProjectWorktreeTaskIdsForRemoval,
-				warn: deps.warn,
-				buildProjectsPayload: deps.workspaceRegistry.buildProjectsPayload,
-				pickDirectoryPathFromSystemDialog: deps.pickDirectoryPathFromSystemDialog,
-				serverCwd: process.cwd(),
-			}),
-			hooksApi: createHooksApi({
-				getWorkspacePathById: deps.workspaceRegistry.getWorkspacePathById,
-				ensureTerminalManagerForWorkspace: deps.ensureTerminalManagerForWorkspace,
-				broadcastRuntimeWorkspaceStateUpdated: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
-				broadcastTaskReadyForReview: deps.runtimeStateHub.broadcastTaskReadyForReview,
-			}),
+			runtimeApi,
+			workspaceApi,
+			projectsApi,
+			hooksApi,
 		};
 	};
 
@@ -517,6 +535,73 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		? buildKanbanRuntimeUrl(`/${encodeURIComponent(activeWorkspaceId)}`)
 		: getKanbanRuntimeOrigin();
 
+	// Advance the board for tasks nobody is watching, so a task started with no browser
+	// open still reaches Done with its work committed.
+	const unattendedTaskDriver = createUnattendedTaskDriver({
+		listWorkspaces: () =>
+			deps.workspaceRegistry
+				.listManagedWorkspaces()
+				.flatMap(({ workspaceId, workspacePath }) => (workspacePath ? [{ workspaceId, workspacePath }] : [])),
+		loadBoard: async (workspace) => await loadWorkspaceBoardById(workspace.workspaceId),
+		applyBoardChange: async (workspace, change) => {
+			const mutation = await mutateWorkspaceState(workspace.workspacePath, (state) => {
+				const nextBoard = change(state.board);
+				if (nextBoard === null) {
+					return {
+						board: state.board,
+						value: { previousBoard: state.board, nextBoard: state.board, sessions: state.sessions },
+						save: false,
+					};
+				}
+				return {
+					board: nextBoard,
+					value: { previousBoard: state.board, nextBoard, sessions: state.sessions },
+				};
+			});
+			return { ...mutation.value, changed: mutation.saved };
+		},
+		resolveSessionSummary: (workspace, taskId) => {
+			const terminalSummary =
+				deps.workspaceRegistry.getTerminalManagerForWorkspace(workspace.workspaceId)?.getSummary(taskId) ?? null;
+			const clineSummary =
+				clineTaskSessionServiceByWorkspaceId.get(workspace.workspaceId)?.getSummary(taskId) ?? null;
+			return selectLastTurnSummary(terminalSummary, clineSummary);
+		},
+		probeChangedFiles: async (workspace, task) => {
+			try {
+				const info = await getTaskWorkspaceInfo({
+					cwd: workspace.workspacePath,
+					taskId: task.id,
+					baseRef: task.baseRef,
+				});
+				if (!info.exists) {
+					return null;
+				}
+				return (await getGitSyncSummary(info.path)).changedFiles;
+			} catch {
+				return null;
+			}
+		},
+		loadPromptTemplates: async (workspace) => await deps.workspaceRegistry.loadScopedRuntimeConfig(workspace),
+		sendPrompt: async (workspace, taskId, prompt) => {
+			const response = await runtimeApi.sendTaskSessionInput(workspace, {
+				taskId,
+				text: prompt,
+				appendNewline: true,
+			});
+			return response.ok;
+		},
+		stopSession: async (workspace, taskId) => {
+			await runtimeApi.stopTaskSession(workspace, { taskId });
+		},
+		reclaimWorktrees: reclaimFinishedTaskWorktrees,
+		broadcastWorkspaceStateUpdated: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
+		broadcastProjectsUpdated: deps.runtimeStateHub.broadcastRuntimeProjectsUpdated,
+		notifyReviewReady: deps.runtimeStateHub.broadcastTaskReadyForReview,
+		log: (message) => deps.warn(`[unattended] ${message}`),
+	});
+	unattendedTaskDriver.start();
+
 	// Recover claude sessions frozen on a retryable API error, and flag the ones stuck on
 	// an error no nudge can fix.
 	const stallWatchdog = createStallWatchdog({
@@ -529,6 +614,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 	return {
 		url,
 		close: async () => {
+			unattendedTaskDriver.close();
 			stallWatchdog.close();
 			await Promise.all(
 				Array.from(clineTaskSessionServiceByWorkspaceId.values()).map(async (service) => {

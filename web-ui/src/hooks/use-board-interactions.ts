@@ -1,9 +1,9 @@
 import type { DropResult } from "@hello-pangea/dnd";
+import type { TaskGitAction } from "@runtime-task-git-action-prompt";
 import pLimit from "p-limit";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { notifyError, showAppToast } from "@/components/app-toaster";
-import type { TaskGitAction } from "@/git-actions/build-task-git-action-prompt";
 import { useLinkedBacklogTaskActions } from "@/hooks/use-linked-backlog-task-actions";
 import { useProgrammaticCardMoves } from "@/hooks/use-programmatic-card-moves";
 import { useReviewAutoActions } from "@/hooks/use-review-auto-actions";
@@ -448,6 +448,12 @@ export function useBoardInteractions({
 					continue;
 				}
 				const columnId = getTaskColumnId(nextBoard, summary.taskId);
+				// Server-driven cards are advanced by the unattended task driver, which runs with
+				// or without a browser attached. Moving them here too would mean two writers on
+				// the same card.
+				if (findCardSelection(nextBoard, summary.taskId)?.card.unattended === true) {
+					continue;
+				}
 				if (summary.state === "awaiting_review" && columnId === "in_progress") {
 					const programmaticMoveAttempt = tryProgrammaticCardMove(summary.taskId, columnId, "review");
 					if (programmaticMoveAttempt === "started" || programmaticMoveAttempt === "blocked") {
