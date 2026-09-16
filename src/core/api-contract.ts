@@ -139,6 +139,10 @@ export const runtimeBoardCardSchema = z
 		autoReviewMode: runtimeTaskAutoReviewModeSchema.optional(),
 		images: z.array(runtimeTaskImageSchema).optional(),
 		agentId: runtimeAgentIdSchema.optional(),
+		// Hands this task's board lifecycle to the server-side unattended driver instead of
+		// the browser's auto-advance hooks, so it reaches Done with no tab open. The two
+		// must never drive the same card, so the browser hooks skip anything flagged here.
+		unattended: z.boolean().optional(),
 		clineSettings: runtimeTaskClineSettingsSchema.optional(),
 		clineProviderId: z.string().optional(),
 		clineModelId: z.string().optional(),

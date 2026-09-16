@@ -16,10 +16,9 @@ import {
 	parseWorktreeDeleteRequest,
 	parseWorktreeEnsureRequest,
 } from "../core/api-validation";
-import { getTaskIdsEnteringFinishedColumn } from "../core/task-board-mutations";
+import { isActiveTaskSessionState } from "../core/task-session-state";
 import { saveWorkspaceState, WorkspaceStateConflictError } from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
-import { deleteTaskWorktrees } from "../workspace/delete-task-worktrees";
 import {
 	createEmptyWorkspaceChangesResponse,
 	getWorkspaceChanges,
@@ -28,6 +27,7 @@ import {
 } from "../workspace/get-workspace-changes";
 import { getCommitDiff, getGitLog, getGitRefs } from "../workspace/git-history";
 import { discardGitChanges, getGitSyncSummary, runGitCheckoutAction, runGitSyncAction } from "../workspace/git-sync";
+import { reclaimFinishedTaskWorktrees } from "../workspace/reclaim-finished-task-worktrees";
 import { searchWorkspaceFiles } from "../workspace/search-workspace-files";
 import {
 	deleteTaskWorktree,
@@ -91,11 +91,7 @@ function normalizeRequiredTaskWorkspaceScopeInput(input: {
 	};
 }
 
-function isActiveTaskSessionState(summary: RuntimeTaskSessionSummary | null): boolean {
-	return summary?.state === "running" || summary?.state === "awaiting_review";
-}
-
-function selectLastTurnSummary(
+export function selectLastTurnSummary(
 	terminalSummary: RuntimeTaskSessionSummary | null,
 	clineSummary: RuntimeTaskSessionSummary | null,
 ): RuntimeTaskSessionSummary | null {
@@ -373,30 +369,14 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 					input.sessions[summary.taskId] = summary;
 				}
 				const response = await saveWorkspaceState(workspaceScope.workspacePath, input, {
-					// A finished task keeps a full checkout on disk - build output included, which for
-					// build-heavy repos runs to tens of gigabytes - until something reclaims it. The
-					// client normally does that itself after stopping the agent, but the auto-move that
-					// files an interrupted task under "Done" skips that workflow entirely, and a dropped
-					// request or a closed tab loses it on the other routes. The board is persisted as a
-					// whole snapshot, so diffing it against the stored one is what lets the server catch
-					// every one of those cases in a single place.
+					// Only terminal sessions are authoritative here; a native Cline session is only as
+					// current as the summary the client sent.
 					onBoardReplaced: (previousBoard, nextBoard) => {
-						const finishedTaskIds = getTaskIdsEnteringFinishedColumn(previousBoard, nextBoard).filter(
-							// The client saves the board optimistically and stops the agent afterwards, so a
-							// task can arrive here while its process is still live in the worktree. Those are
-							// left to the client's own post-stop cleanup rather than pulled out from under a
-							// running agent. Only terminal sessions are authoritative here; a native Cline
-							// session is only as current as the summary the client sent.
-							(taskId) => !isActiveTaskSessionState(input.sessions[taskId] ?? null),
-						);
-						if (finishedTaskIds.length === 0) {
-							return;
-						}
-						// Deliberately not awaited: removing a large worktree can take a while and must
-						// not hold the workspace lock or delay the save response.
-						void deleteTaskWorktrees({
+						reclaimFinishedTaskWorktrees({
 							repoPath: workspaceScope.workspacePath,
-							taskIds: finishedTaskIds,
+							previousBoard,
+							nextBoard,
+							sessions: input.sessions,
 							warn: deps.warn,
 						});
 					},

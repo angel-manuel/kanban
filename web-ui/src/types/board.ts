@@ -46,6 +46,12 @@ export interface BoardCard {
 	images?: TaskImage[];
 	agentId?: RuntimeAgentId;
 	clineSettings?: RuntimeTaskClineSettings;
+	/**
+	 * The server's unattended driver owns this card's board lifecycle. The browser's
+	 * auto-advance and auto-review hooks must leave it alone, or both writers would move
+	 * the same card and inject the commit prompt twice.
+	 */
+	unattended?: boolean;
 	baseRef: string;
 	createdAt: number;
 	updatedAt: number;
