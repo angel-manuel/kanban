@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Tasks marked unattended now advance on their own: the runtime moves the card through Review, runs the configured commit or PR follow-up, files it under Done, and reclaims the worktree, all without a browser tab open
+
 ## [0.1.70]
 
 - Fixed a freeze that could occur when clearing completed tasks on large boards by limiting cleanup concurrency

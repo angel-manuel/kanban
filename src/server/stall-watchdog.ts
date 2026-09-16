@@ -16,17 +16,9 @@
 import type { RuntimeTaskSessionSummary } from "../core/api-contract";
 import { stripAnsi } from "../terminal/output-utils";
 import { type AgentErrorClass, classifyClaudeErrorTail } from "./agent-error-patterns";
+import { envInt, isEnvSwitchEnabled } from "./env-tunables";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-function envInt(name: string, fallback: number): number {
-	const raw = process.env[name];
-	if (raw === undefined) {
-		return fallback;
-	}
-	const parsed = Number.parseInt(raw.trim(), 10);
-	return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
-}
 
 // Tunables (env-overridable). Defaults chosen per plan.
 export const POLL_MS = envInt("KANBAN_STALL_POLL_MS", 30_000);
@@ -45,8 +37,7 @@ const INJECT_TEXT = "continue\r";
 
 // Disabled only when explicitly turned off; on by default.
 export function isStallWatchdogEnabled(): boolean {
-	const value = (process.env.KANBAN_STALL_WATCHDOG ?? "").trim().toLowerCase();
-	return value !== "off" && value !== "0" && value !== "false" && value !== "no";
+	return isEnvSwitchEnabled("KANBAN_STALL_WATCHDOG");
 }
 
 export interface StallDetectionInput {

@@ -568,6 +568,42 @@ describe("board dependency state", () => {
 		]);
 	});
 
+	// Regression guard: normalizeCard whitelists fields, and the board it returns is what
+	// the debounced saveState writes back. If it drops `unattended`, an open tab silently
+	// hands a server-driven task back to the browser mid-run.
+	it("preserves the unattended flag through normalization", () => {
+		const normalized = normalizeBoardData({
+			columns: [
+				{
+					id: "in_progress",
+					cards: [
+						{ id: "a", prompt: "Task A", startInPlanMode: false, baseRef: "main", unattended: true },
+						{ id: "b", prompt: "Task B", startInPlanMode: false, baseRef: "main" },
+					],
+				},
+			],
+			dependencies: [],
+		});
+
+		const cards = normalized?.columns.find((column) => column.id === "in_progress")?.cards;
+		expect(cards?.find((card) => card.id === "a")?.unattended).toBe(true);
+		expect(cards?.find((card) => card.id === "b")?.unattended).toBeUndefined();
+	});
+
+	it("ignores a non-boolean unattended value", () => {
+		const normalized = normalizeBoardData({
+			columns: [
+				{
+					id: "backlog",
+					cards: [{ id: "a", prompt: "Task A", startInPlanMode: false, baseRef: "main", unattended: "yes" }],
+				},
+			],
+			dependencies: [],
+		});
+
+		expect(normalized?.columns.find((column) => column.id === "backlog")?.cards[0]?.unattended).toBeUndefined();
+	});
+
 	it("disables auto-review settings for a task", () => {
 		let board = createInitialBoardData();
 		board = addTaskToColumn(board, "review", {

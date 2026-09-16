@@ -1,9 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { RuntimeTaskSessionSummary, RuntimeWorkspaceChangesResponse } from "../../../src/core/api-contract";
+import type {
+	RuntimeBoardCard,
+	RuntimeBoardData,
+	RuntimeTaskSessionSummary,
+	RuntimeWorkspaceChangesResponse,
+	RuntimeWorkspaceStateSaveRequest,
+} from "../../../src/core/api-contract";
 
 const workspaceTaskWorktreeMocks = vi.hoisted(() => ({
 	resolveTaskCwd: vi.fn(),
+	deleteTaskWorktree: vi.fn(),
 }));
 
 const workspaceChangesMocks = vi.hoisted(() => ({
@@ -14,11 +21,15 @@ const workspaceChangesMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../src/workspace/task-worktree.js", () => ({
-	deleteTaskWorktree: vi.fn(),
+	deleteTaskWorktree: workspaceTaskWorktreeMocks.deleteTaskWorktree,
 	ensureTaskWorktreeIfDoesntExist: vi.fn(),
 	getTaskWorkspaceInfo: vi.fn(),
 	resolveTaskCwd: workspaceTaskWorktreeMocks.resolveTaskCwd,
 }));
+
+// Spy mode keeps the real module (WorkspaceStateConflictError included) and only lets the
+// reclamation test drive saveWorkspaceState's onBoardReplaced callback.
+vi.mock("../../../src/state/workspace-state.js", { spy: true });
 
 vi.mock("../../../src/workspace/get-workspace-changes.js", () => ({
 	createEmptyWorkspaceChangesResponse: workspaceChangesMocks.createEmptyWorkspaceChangesResponse,
@@ -27,6 +38,7 @@ vi.mock("../../../src/workspace/get-workspace-changes.js", () => ({
 	getWorkspaceChangesFromRef: workspaceChangesMocks.getWorkspaceChangesFromRef,
 }));
 
+import { saveWorkspaceState } from "../../../src/state/workspace-state";
 import { createWorkspaceApi } from "../../../src/trpc/workspace-api";
 
 function createSummary(overrides: Partial<RuntimeTaskSessionSummary> = {}): RuntimeTaskSessionSummary {
@@ -99,6 +111,7 @@ describe("createWorkspaceApi loadChanges", () => {
 			broadcastRuntimeWorkspaceStateUpdated: vi.fn(),
 			broadcastRuntimeProjectsUpdated: vi.fn(),
 			buildWorkspaceStateSnapshot: vi.fn(),
+			warn: vi.fn(),
 		});
 
 		await api.loadChanges(
@@ -148,6 +161,7 @@ describe("createWorkspaceApi loadChanges", () => {
 			broadcastRuntimeWorkspaceStateUpdated: vi.fn(),
 			broadcastRuntimeProjectsUpdated: vi.fn(),
 			buildWorkspaceStateSnapshot: vi.fn(),
+			warn: vi.fn(),
 		});
 
 		await api.loadChanges(
@@ -199,6 +213,7 @@ describe("createWorkspaceApi loadChanges", () => {
 			broadcastRuntimeWorkspaceStateUpdated: vi.fn(),
 			broadcastRuntimeProjectsUpdated: vi.fn(),
 			buildWorkspaceStateSnapshot: vi.fn(),
+			warn: vi.fn(),
 		});
 
 		await api.loadChanges(
@@ -271,6 +286,7 @@ describe("createWorkspaceApi loadChanges", () => {
 			broadcastRuntimeWorkspaceStateUpdated: vi.fn(),
 			broadcastRuntimeProjectsUpdated: vi.fn(),
 			buildWorkspaceStateSnapshot: vi.fn(),
+			warn: vi.fn(),
 		});
 
 		await api.loadChanges(
@@ -306,6 +322,7 @@ describe("createWorkspaceApi loadChanges", () => {
 			broadcastRuntimeWorkspaceStateUpdated: vi.fn(),
 			broadcastRuntimeProjectsUpdated: vi.fn(),
 			buildWorkspaceStateSnapshot: vi.fn(),
+			warn: vi.fn(),
 		});
 
 		const response = await api.loadChanges(
@@ -323,5 +340,137 @@ describe("createWorkspaceApi loadChanges", () => {
 		expect(response).toBe(emptyResponse);
 		expect(workspaceChangesMocks.createEmptyWorkspaceChangesResponse).toHaveBeenCalledWith("/tmp/repo");
 		expect(workspaceChangesMocks.getWorkspaceChanges).not.toHaveBeenCalled();
+	});
+});
+
+function createBoardCard(taskId: string): RuntimeBoardCard {
+	return {
+		id: taskId,
+		title: taskId,
+		prompt: taskId,
+		startInPlanMode: false,
+		baseRef: "main",
+		createdAt: 1,
+		updatedAt: 1,
+	};
+}
+
+function createBoard(cardsByColumnId: Partial<Record<RuntimeBoardData["columns"][number]["id"], string[]>>) {
+	return {
+		columns: [
+			{ id: "backlog", title: "Backlog", cards: (cardsByColumnId.backlog ?? []).map(createBoardCard) },
+			{ id: "in_progress", title: "In Progress", cards: (cardsByColumnId.in_progress ?? []).map(createBoardCard) },
+			{ id: "review", title: "Review", cards: (cardsByColumnId.review ?? []).map(createBoardCard) },
+			{ id: "trash", title: "Done", cards: (cardsByColumnId.trash ?? []).map(createBoardCard) },
+		],
+		dependencies: [],
+	} satisfies RuntimeBoardData;
+}
+
+describe("createWorkspaceApi saveState worktree reclamation", () => {
+	const warn = vi.fn();
+
+	function createApi() {
+		return createWorkspaceApi({
+			ensureTerminalManagerForWorkspace: vi.fn(async () => ({ listSummaries: () => [] }) as never),
+			getScopedClineTaskSessionService: vi.fn(),
+			broadcastRuntimeWorkspaceStateUpdated: vi.fn(),
+			broadcastRuntimeProjectsUpdated: vi.fn(),
+			buildWorkspaceStateSnapshot: vi.fn(),
+			warn,
+		});
+	}
+
+	/**
+	 * Stands in for the persisted board so the test can drive the exact transition
+	 * saveWorkspaceState would observe under its lock.
+	 */
+	function persistBoard(previousBoard: RuntimeBoardData): void {
+		vi.mocked(saveWorkspaceState).mockImplementation(async (_cwd, payload, options) => {
+			options?.onBoardReplaced?.(previousBoard, payload.board);
+			return null as never;
+		});
+	}
+
+	function saveBoard(
+		api: ReturnType<typeof createApi>,
+		board: RuntimeBoardData,
+		sessions: Record<string, RuntimeTaskSessionSummary> = {},
+	) {
+		return api.saveState({ workspaceId: "workspace-1", workspacePath: "/tmp/repo" }, {
+			board,
+			sessions,
+		} satisfies RuntimeWorkspaceStateSaveRequest);
+	}
+
+	beforeEach(() => {
+		warn.mockReset();
+		workspaceTaskWorktreeMocks.deleteTaskWorktree.mockReset();
+		workspaceTaskWorktreeMocks.deleteTaskWorktree.mockResolvedValue({ ok: true, removed: true });
+	});
+
+	it("reclaims the worktree of a task that just reached the done column", async () => {
+		persistBoard(createBoard({ in_progress: ["task-1"], trash: ["task-0"] }));
+
+		await saveBoard(createApi(), createBoard({ trash: ["task-1", "task-0"] }));
+
+		await vi.waitFor(() => {
+			expect(workspaceTaskWorktreeMocks.deleteTaskWorktree).toHaveBeenCalledWith({
+				repoPath: "/tmp/repo",
+				taskId: "task-1",
+			});
+		});
+		expect(workspaceTaskWorktreeMocks.deleteTaskWorktree).toHaveBeenCalledTimes(1);
+	});
+
+	it("leaves worktrees alone when no task entered the done column", async () => {
+		persistBoard(createBoard({ in_progress: ["task-1"], trash: ["task-0"] }));
+
+		await saveBoard(createApi(), createBoard({ review: ["task-1"], trash: ["task-0"] }));
+
+		expect(workspaceTaskWorktreeMocks.deleteTaskWorktree).not.toHaveBeenCalled();
+	});
+
+	it.each(["running", "awaiting_review"] as const)(
+		"leaves the worktree in place while the task agent is still %s",
+		async (state) => {
+			persistBoard(createBoard({ in_progress: ["task-1"] }));
+
+			await saveBoard(createApi(), createBoard({ trash: ["task-1"] }), {
+				"task-1": createSummary({ taskId: "task-1", state }),
+			});
+
+			expect(workspaceTaskWorktreeMocks.deleteTaskWorktree).not.toHaveBeenCalled();
+		},
+	);
+
+	it("reclaims the worktree of a task auto-moved to done after its session was interrupted", async () => {
+		persistBoard(createBoard({ in_progress: ["task-1"] }));
+
+		await saveBoard(createApi(), createBoard({ trash: ["task-1"] }), {
+			"task-1": createSummary({ taskId: "task-1", state: "interrupted" }),
+		});
+
+		await vi.waitFor(() => {
+			expect(workspaceTaskWorktreeMocks.deleteTaskWorktree).toHaveBeenCalledWith({
+				repoPath: "/tmp/repo",
+				taskId: "task-1",
+			});
+		});
+	});
+
+	it("keeps the state save successful when worktree reclamation fails", async () => {
+		workspaceTaskWorktreeMocks.deleteTaskWorktree.mockResolvedValue({
+			ok: false,
+			removed: false,
+			error: "worktree is locked",
+		});
+		persistBoard(createBoard({ review: ["task-1"] }));
+
+		await expect(saveBoard(createApi(), createBoard({ trash: ["task-1"] }))).resolves.not.toThrow();
+
+		await vi.waitFor(() => {
+			expect(warn).toHaveBeenCalledWith(expect.stringContaining("worktree is locked"));
+		});
 	});
 });

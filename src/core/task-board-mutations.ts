@@ -21,6 +21,7 @@ export interface RuntimeCreateTaskInput {
 	images?: RuntimeTaskImage[];
 	agentId?: RuntimeAgentId;
 	clineSettings?: RuntimeTaskClineSettings;
+	unattended?: boolean;
 	baseRef: string;
 }
 
@@ -33,8 +34,15 @@ export interface RuntimeUpdateTaskInput {
 	images?: RuntimeTaskImage[];
 	agentId?: RuntimeAgentId | null;
 	clineSettings?: RuntimeTaskClineSettings | null;
+	unattended?: boolean;
 	baseRef: string;
 }
+
+/**
+ * Column that holds finished tasks. The board renders it as "Done"; the persisted
+ * column id has always been "trash".
+ */
+const FINISHED_TASK_COLUMN_ID = "trash" satisfies RuntimeBoardColumnId;
 
 function normalizeTaskAutoReviewMode(value: RuntimeTaskAutoReviewMode | null | undefined): RuntimeTaskAutoReviewMode {
 	if (value === "pr") {
@@ -186,7 +194,7 @@ function resolveDependencyEndpoints(
 	if (!firstColumnId || !secondColumnId) {
 		return { reason: "missing_task" };
 	}
-	if (firstColumnId === "trash" || secondColumnId === "trash") {
+	if (firstColumnId === FINISHED_TASK_COLUMN_ID || secondColumnId === FINISHED_TASK_COLUMN_ID) {
 		return { reason: "trash_task" };
 	}
 	const firstIsBacklog = firstColumnId === "backlog";
@@ -309,6 +317,7 @@ export function addTaskToColumn(
 		images: cloneTaskImages(input.images),
 		...(input.agentId ? { agentId: input.agentId } : {}),
 		...(input.clineSettings !== undefined ? { clineSettings: cloneTaskClineSettings(input.clineSettings) } : {}),
+		...(input.unattended ? { unattended: true } : {}),
 		baseRef,
 		createdAt: now,
 		updatedAt: now,
@@ -410,6 +419,31 @@ export function removeTaskDependency(board: RuntimeBoardData, dependencyId: stri
 	};
 }
 
+function getFinishedTaskIds(board: RuntimeBoardData): Set<string> {
+	const finishedColumn = board.columns.find((column) => column.id === FINISHED_TASK_COLUMN_ID);
+	return new Set(finishedColumn?.cards.map((card) => card.id) ?? []);
+}
+
+/**
+ * Task ids that sit in the finished column of `nextBoard` but did not in `previousBoard`.
+ *
+ * The board is persisted as a whole snapshot, so a task reaching "Done" is otherwise
+ * indistinguishable from any other save. This is what lets finished-task cleanup - reclaiming
+ * the task worktree in particular - hang off a plain state save rather than off each of the
+ * routes that can move a card into that column.
+ */
+export function getTaskIdsEnteringFinishedColumn(
+	previousBoard: RuntimeBoardData,
+	nextBoard: RuntimeBoardData,
+): string[] {
+	const previouslyFinishedTaskIds = getFinishedTaskIds(previousBoard);
+	const nextFinishedColumn = nextBoard.columns.find((column) => column.id === FINISHED_TASK_COLUMN_ID);
+	if (!nextFinishedColumn) {
+		return [];
+	}
+	return nextFinishedColumn.cards.filter((card) => !previouslyFinishedTaskIds.has(card.id)).map((card) => card.id);
+}
+
 export function getReadyLinkedTaskIdsForTaskInTrash(board: RuntimeBoardData, taskId: string): string[] {
 	return getLinkedBacklogTaskIdsReadyAfterTaskTrashed(board, taskId, getTaskColumnId(board, taskId));
 }
@@ -421,7 +455,7 @@ export function trashTaskAndGetReadyLinkedTaskIds(
 ): RuntimeTrashTaskResult {
 	const fromColumnId = getTaskColumnId(board, taskId);
 	const readyTaskIds = getLinkedBacklogTaskIdsReadyAfterTaskTrashed(board, taskId, fromColumnId);
-	const movedToTrash = moveTaskToColumn(board, taskId, "trash", now);
+	const movedToTrash = moveTaskToColumn(board, taskId, FINISHED_TASK_COLUMN_ID, now);
 	return {
 		...movedToTrash,
 		readyTaskIds: movedToTrash.moved ? readyTaskIds : [],
@@ -545,7 +579,9 @@ export function moveTaskToColumn(
 		updatedAt: now,
 	};
 	const targetCards =
-		targetColumnId === "trash" ? [movedTask, ...targetColumn.cards] : [...targetColumn.cards, movedTask];
+		targetColumnId === FINISHED_TASK_COLUMN_ID
+			? [movedTask, ...targetColumn.cards]
+			: [...targetColumn.cards, movedTask];
 
 	const columns = board.columns.map((column, index) => {
 		if (index === found.columnIndex) {
@@ -630,6 +666,15 @@ export function updateTask(
 						: input.clineSettings === null
 							? undefined
 							: cloneTaskClineSettings(input.clineSettings),
+				// Omitting the field leaves the card's current mode alone; an explicit false
+				// drops the key entirely so an attended card never carries a dead flag.
+				...(input.unattended === undefined
+					? card.unattended
+						? { unattended: true }
+						: {}
+					: input.unattended
+						? { unattended: true }
+						: {}),
 				baseRef,
 				updatedAt: now,
 			};
@@ -653,5 +698,57 @@ export function updateTask(
 		},
 		task: updatedTask,
 		updated: true,
+	};
+}
+
+/**
+ * Flips a task between browser-driven and server-driven board automation.
+ *
+ * Kept separate from `updateTask` because that function rewrites the whole card from its
+ * input, so callers that only want to hand a task over - the unattended driver parking a
+ * run, or a user taking one back - would otherwise have to resupply every field.
+ */
+export function setTaskUnattended(
+	board: RuntimeBoardData,
+	taskId: string,
+	unattended: boolean,
+	now: number = Date.now(),
+): RuntimeUpdateTaskResult {
+	const normalizedTaskId = taskId.trim();
+	if (!normalizedTaskId) {
+		return { board, task: null, updated: false };
+	}
+
+	let updatedTask: RuntimeBoardCard | null = null;
+	const columns = board.columns.map((column) => {
+		let columnUpdated = false;
+		const cards = column.cards.map((card) => {
+			if (card.id !== normalizedTaskId) {
+				return card;
+			}
+			if (Boolean(card.unattended) === unattended) {
+				updatedTask = card;
+				return card;
+			}
+			columnUpdated = true;
+			const { unattended: _previous, ...rest } = card;
+			updatedTask = {
+				...rest,
+				...(unattended ? { unattended: true } : {}),
+				updatedAt: now,
+			};
+			return updatedTask;
+		});
+		return columnUpdated ? { ...column, cards } : column;
+	});
+
+	if (!updatedTask) {
+		return { board, task: null, updated: false };
+	}
+	const changed = columns.some((column, index) => column !== board.columns[index]);
+	return {
+		board: changed ? { ...board, columns } : board,
+		task: updatedTask,
+		updated: changed,
 	};
 }

@@ -645,9 +645,21 @@ export async function loadWorkspaceState(cwd: string): Promise<RuntimeWorkspaceS
 	return toWorkspaceStateResponse(context, board, sessions, meta.revision);
 }
 
+export interface SaveWorkspaceStateOptions {
+	/**
+	 * Called once the incoming board has replaced the persisted one, still inside the workspace
+	 * lock so the two boards cannot be separated by a concurrent save. Callers use it to react to
+	 * column transitions the payload implies but does not spell out. It must stay synchronous:
+	 * schedule any follow-up work instead of awaiting it here, or the lock is held for its
+	 * duration.
+	 */
+	onBoardReplaced?: (previousBoard: RuntimeBoardData, nextBoard: RuntimeBoardData) => void;
+}
+
 export async function saveWorkspaceState(
 	cwd: string,
 	payload: RuntimeWorkspaceStateSaveRequest,
+	options?: SaveWorkspaceStateOptions,
 ): Promise<RuntimeWorkspaceStateResponse> {
 	const parsedPayload = parseWorkspaceStateSavePayload(payload);
 	const context = await loadWorkspaceContext(cwd);
@@ -663,6 +675,7 @@ export async function saveWorkspaceState(
 		) {
 			throw new WorkspaceStateConflictError(expectedRevision, currentMeta.revision);
 		}
+		const previousBoard = options?.onBoardReplaced ? await readWorkspaceBoard(context.workspaceId) : null;
 		const board = parsedPayload.board;
 		const sessions = parsedPayload.sessions;
 		const nextRevision = currentMeta.revision + 1;
@@ -680,6 +693,10 @@ export async function saveWorkspaceState(
 		await lockedFileSystem.writeJsonFileAtomic(metaPath, nextMeta, {
 			lock: null,
 		});
+
+		if (previousBoard) {
+			options?.onBoardReplaced?.(previousBoard, board);
+		}
 
 		return toWorkspaceStateResponse(context, board, sessions, nextRevision);
 	});

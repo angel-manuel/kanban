@@ -17,10 +17,10 @@ import {
 	removeWorkspaceStateFiles,
 } from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
+import { deleteTaskWorktrees } from "../workspace/delete-task-worktrees";
 import { cloneGitRepository } from "../workspace/git-clone";
 import { ensureInitialCommit, initializeGitRepository } from "../workspace/initialize-repo";
 import { isPathWithinRoot } from "../workspace/path-sandbox";
-import { deleteTaskWorktree } from "../workspace/task-worktree";
 import type { RuntimeTrpcContext } from "./app-router";
 
 interface DisposeWorkspaceOptions {
@@ -202,25 +202,11 @@ export function createProjectsApi(deps: CreateProjectsApiDependencies): RuntimeT
 				}
 				void deps.broadcastRuntimeProjectsUpdated(deps.getActiveWorkspaceId());
 				if (taskIdsToCleanup.size > 0) {
-					const cleanupTaskIds = Array.from(taskIdsToCleanup);
-					void (async () => {
-						const deletions = await Promise.all(
-							cleanupTaskIds.map(async (taskId) => ({
-								taskId,
-								deleted: await deleteTaskWorktree({
-									repoPath: projectToRemove.repoPath,
-									taskId,
-								}),
-							})),
-						);
-						for (const { taskId, deleted } of deletions) {
-							if (deleted.ok) {
-								continue;
-							}
-							const message = deleted.error ?? `Could not delete task workspace for task "${taskId}".`;
-							deps.warn(message);
-						}
-					})();
+					void deleteTaskWorktrees({
+						repoPath: projectToRemove.repoPath,
+						taskIds: taskIdsToCleanup,
+						warn: deps.warn,
+					});
 				}
 				return {
 					ok: true,

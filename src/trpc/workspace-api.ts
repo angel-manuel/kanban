@@ -16,6 +16,7 @@ import {
 	parseWorktreeDeleteRequest,
 	parseWorktreeEnsureRequest,
 } from "../core/api-validation";
+import { isActiveTaskSessionState } from "../core/task-session-state";
 import { saveWorkspaceState, WorkspaceStateConflictError } from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
 import {
@@ -26,6 +27,7 @@ import {
 } from "../workspace/get-workspace-changes";
 import { getCommitDiff, getGitLog, getGitRefs } from "../workspace/git-history";
 import { discardGitChanges, getGitSyncSummary, runGitCheckoutAction, runGitSyncAction } from "../workspace/git-sync";
+import { reclaimFinishedTaskWorktrees } from "../workspace/reclaim-finished-task-worktrees";
 import { searchWorkspaceFiles } from "../workspace/search-workspace-files";
 import {
 	deleteTaskWorktree,
@@ -44,6 +46,7 @@ export interface CreateWorkspaceApiDependencies {
 	broadcastRuntimeWorkspaceStateUpdated: (workspaceId: string, workspacePath: string) => Promise<void> | void;
 	broadcastRuntimeProjectsUpdated: (preferredCurrentProjectId: string | null) => Promise<void> | void;
 	buildWorkspaceStateSnapshot: (workspaceId: string, workspacePath: string) => Promise<RuntimeWorkspaceStateResponse>;
+	warn: (message: string) => void;
 }
 
 function normalizeOptionalTaskWorkspaceScopeInput(
@@ -88,11 +91,7 @@ function normalizeRequiredTaskWorkspaceScopeInput(input: {
 	};
 }
 
-function isActiveTaskSessionState(summary: RuntimeTaskSessionSummary | null): boolean {
-	return summary?.state === "running" || summary?.state === "awaiting_review";
-}
-
-function selectLastTurnSummary(
+export function selectLastTurnSummary(
 	terminalSummary: RuntimeTaskSessionSummary | null,
 	clineSummary: RuntimeTaskSessionSummary | null,
 ): RuntimeTaskSessionSummary | null {
@@ -369,7 +368,19 @@ export function createWorkspaceApi(deps: CreateWorkspaceApiDependencies): Runtim
 				for (const summary of terminalManager.listSummaries()) {
 					input.sessions[summary.taskId] = summary;
 				}
-				const response = await saveWorkspaceState(workspaceScope.workspacePath, input);
+				const response = await saveWorkspaceState(workspaceScope.workspacePath, input, {
+					// Only terminal sessions are authoritative here; a native Cline session is only as
+					// current as the summary the client sent.
+					onBoardReplaced: (previousBoard, nextBoard) => {
+						reclaimFinishedTaskWorktrees({
+							repoPath: workspaceScope.workspacePath,
+							previousBoard,
+							nextBoard,
+							sessions: input.sessions,
+							warn: deps.warn,
+						});
+					},
+				});
 				void deps.broadcastRuntimeWorkspaceStateUpdated(workspaceScope.workspaceId, workspaceScope.workspacePath);
 				void deps.broadcastRuntimeProjectsUpdated(workspaceScope.workspaceId);
 				return response;

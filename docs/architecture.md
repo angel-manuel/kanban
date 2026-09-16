@@ -176,6 +176,8 @@ One of the biggest cleanup themes was making ownership clearer. The system is mu
 | Cline OAuth state and refresh | Cline SDK | Kanban delegates through a provider service |
 | Cline session persistence and history | Cline SDK | Kanban hydrates from SDK artifacts instead of reinventing persistence |
 | mapping SDK sessions into Kanban task semantics | Kanban integration layer | this is what `src/cline-sdk/` exists to do |
+| advancing the board for a normal task | browser hooks | `use-board-interactions.ts` moves cards as session state changes; `use-review-auto-actions.ts` runs the commit/PR follow-up |
+| advancing the board for an `unattended` task | `unattended-task-driver.ts` | the browser may not be open at all, so the runtime does the same job server-side |
 | UI rendering state for detail view and sidebar | browser hooks and components | local UI state belongs in the frontend |
 | live state fanout to the browser | `runtime-state-hub.ts` | the browser should react to streamed state, not poll |
 
@@ -344,6 +346,34 @@ This is the "classic Kanban" path.
 When the user sends a Cline message from the detail view or the home sidebar, the browser goes through shared Cline runtime actions instead of inventing two separate flows. The request reaches `runtime-api.ts`, which delegates to the task-oriented Cline session service. That service makes sure the right native session exists, applies chat turns to it, listens to SDK events, updates the message repository and summary state, and lets the runtime state hub stream those updates back to the browser.
 
 The important architectural point is that detail view and sidebar are two surfaces over the same underlying Cline runtime model.
+
+### Running a task with no browser attached
+
+Most board automation lives in the browser. The hooks in `web-ui/src/hooks/` are what move a
+card from In Progress to Review when the agent stops, run the commit or PR follow-up, and
+file the card under Done. That is fine for interactive work and useless for a task that runs
+overnight: with no tab open the agent still runs to completion, but the card never moves, the
+work is never committed, and the worktree is never reclaimed.
+
+A task card carrying `unattended: true` opts into the server-side equivalent.
+`src/server/unattended-task-driver.ts` polls the boards of managed workspaces, and for each
+flagged task feeds the board column, the session summary and the worktree's changed-file
+count into the pure reducer in `unattended-task-reducer.ts`. The reducer returns one command
+- move the card, probe the worktree, inject the commit/PR prompt, complete the task, or park
+it - and the driver performs it, writing through `mutateWorkspaceState` and broadcasting so
+any tab that *is* open stays in sync.
+
+The two must never drive the same card, so the browser hooks skip anything flagged
+`unattended`. That is a declarative handover rather than a race: both sides read the same
+persisted field. It also means `normalizeCard` in `web-ui/src/state/board-state.ts` has to
+carry the flag through, because the board it returns is what the debounced `saveState`
+writes back.
+
+Everything the driver can do is bounded, because a loop here spends API credits while nobody
+is watching: a kill switch (`KANBAN_UNATTENDED_DRIVER`), a cap on commit/PR injections per
+task, a maximum run duration after which the task is parked in Review for a human, and a
+refusal to inject into a session that is not live. Parking never stops the agent and never
+deletes a worktree.
 
 ### Opening settings and changing Cline provider state
 

@@ -2,7 +2,8 @@ import type { RuntimeTaskSessionSummary, RuntimeWorkspaceStateResponse } from ".
 import { updateTaskDependencies } from "../core/task-board-mutations";
 import { listWorkspaceIndexEntries, loadWorkspaceState, saveWorkspaceState } from "../state/workspace-state";
 import type { TerminalSessionManager } from "../terminal/session-manager";
-import { deleteTaskWorktree, removeTaskWorktreeSetupLock } from "../workspace/task-worktree";
+import { deleteTaskWorktrees } from "../workspace/delete-task-worktrees";
+import { removeTaskWorktreeSetupLock } from "../workspace/task-worktree";
 import type { WorkspaceRegistry } from "./workspace-registry";
 import { collectProjectWorktreeTaskIdsForRemoval } from "./workspace-registry";
 
@@ -87,32 +88,6 @@ async function persistInterruptedSessions(
 		sessions: nextSessions,
 	});
 	return [];
-}
-
-async function cleanupInterruptedTaskWorktrees(
-	repoPath: string,
-	taskIds: string[],
-	warn: (message: string) => void,
-): Promise<void> {
-	if (taskIds.length === 0) {
-		return;
-	}
-	const deletions = await Promise.all(
-		taskIds.map(async (taskId) => ({
-			taskId,
-			deleted: await deleteTaskWorktree({
-				repoPath,
-				taskId,
-			}),
-		})),
-	);
-	for (const { taskId, deleted } of deletions) {
-		if (deleted.ok) {
-			continue;
-		}
-		const message = deleted.error ?? `Could not delete task workspace for task "${taskId}" during shutdown.`;
-		warn(message);
-	}
 }
 
 async function cleanupTaskWorktreeSetupLocks(
@@ -226,7 +201,12 @@ export async function shutdownRuntimeServer(deps: RuntimeShutdownCoordinatorDepe
 					resolveSummary: workspace.resolveSummary,
 				},
 			);
-			await cleanupInterruptedTaskWorktrees(workspace.workspacePath, worktreeTaskIds, deps.warn);
+			await deleteTaskWorktrees({
+				repoPath: workspace.workspacePath,
+				taskIds: worktreeTaskIds,
+				context: "during shutdown",
+				warn: deps.warn,
+			});
 		}),
 	);
 

@@ -1,7 +1,7 @@
+import { buildTaskGitActionPrompt, type TaskGitAction } from "@runtime-task-git-action-prompt";
 import { useCallback, useMemo, useState } from "react";
 import { showAppToast } from "@/components/app-toaster";
 import { type UseGitHistoryDataResult, useGitHistoryData } from "@/components/git-history/use-git-history-data";
-import { buildTaskGitActionPrompt, type TaskGitAction } from "@/git-actions/build-task-git-action-prompt";
 import { isNativeClineAgentSelected } from "@/runtime/native-agent";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import type { RuntimeConfigResponse, RuntimeGitSyncAction, RuntimeTaskWorkspaceInfoResponse } from "@/runtime/types";
@@ -276,7 +276,7 @@ export function useGitActions({
 
 				const prompt = buildTaskGitActionPrompt({
 					action,
-					workspaceInfo,
+					baseRef: workspaceInfo.baseRef,
 					templates: runtimeProjectConfig
 						? {
 								commitPromptTemplate: runtimeProjectConfig.commitPromptTemplate,
