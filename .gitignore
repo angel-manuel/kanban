@@ -25,3 +25,7 @@ packages/desktop/runtime-child.js
 packages/desktop/runtime-child-env.js
 packages/desktop/desktop-preflight.js
 packages/desktop/cli
+
+# husky generates this; it must not be committed (it resolves to a self-referential
+# symlink when a git worktree's copy is merged back into the main checkout)
+.husky/_
