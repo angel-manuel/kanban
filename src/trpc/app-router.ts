@@ -62,6 +62,14 @@ import type {
 	RuntimeProjectRemoveResponse,
 	RuntimeProjectsResponse,
 	RuntimeRunUpdateResponse,
+	RuntimeScheduleCreateRequest,
+	RuntimeScheduleIdRequest,
+	RuntimeScheduleListResponse,
+	RuntimeScheduleMutationResponse,
+	RuntimeScheduleRemoveResponse,
+	RuntimeScheduleRunNowResponse,
+	RuntimeScheduleSetEnabledRequest,
+	RuntimeScheduleUpdateRequest,
 	RuntimeShellSessionStartRequest,
 	RuntimeShellSessionStartResponse,
 	RuntimeSlashCommandsResponse,
@@ -153,6 +161,14 @@ import {
 	runtimeProjectRemoveResponseSchema,
 	runtimeProjectsResponseSchema,
 	runtimeRunUpdateResponseSchema,
+	runtimeScheduleCreateRequestSchema,
+	runtimeScheduleIdRequestSchema,
+	runtimeScheduleListResponseSchema,
+	runtimeScheduleMutationResponseSchema,
+	runtimeScheduleRemoveResponseSchema,
+	runtimeScheduleRunNowResponseSchema,
+	runtimeScheduleSetEnabledRequestSchema,
+	runtimeScheduleUpdateRequestSchema,
 	runtimeShellSessionStartRequestSchema,
 	runtimeShellSessionStartResponseSchema,
 	runtimeSlashCommandsResponseSchema,
@@ -366,6 +382,29 @@ export interface RuntimeTrpcContext {
 			preferredWorkspaceId: string | null,
 			input: RuntimeDirectoryListRequest,
 		) => Promise<RuntimeDirectoryListResponse>;
+	};
+	schedulesApi: {
+		list: (scope: RuntimeTrpcWorkspaceScope) => Promise<RuntimeScheduleListResponse>;
+		create: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeScheduleCreateRequest,
+		) => Promise<RuntimeScheduleMutationResponse>;
+		update: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeScheduleUpdateRequest,
+		) => Promise<RuntimeScheduleMutationResponse>;
+		setEnabled: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeScheduleSetEnabledRequest,
+		) => Promise<RuntimeScheduleMutationResponse>;
+		remove: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeScheduleIdRequest,
+		) => Promise<RuntimeScheduleRemoveResponse>;
+		runNow: (
+			scope: RuntimeTrpcWorkspaceScope,
+			input: RuntimeScheduleIdRequest,
+		) => Promise<RuntimeScheduleRunNowResponse>;
 	};
 	hooksApi: {
 		ingest: (input: RuntimeHookIngestRequest) => Promise<RuntimeHookIngestResponse>;
@@ -722,6 +761,41 @@ export const runtimeAppRouter = t.router({
 			.output(runtimeHookIngestResponseSchema)
 			.mutation(async ({ ctx, input }) => {
 				return await ctx.hooksApi.ingest(input);
+			}),
+	}),
+	schedules: t.router({
+		list: workspaceProcedure.output(runtimeScheduleListResponseSchema).query(async ({ ctx }) => {
+			return await ctx.schedulesApi.list(ctx.workspaceScope);
+		}),
+		create: workspaceProcedure
+			.input(runtimeScheduleCreateRequestSchema)
+			.output(runtimeScheduleMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.schedulesApi.create(ctx.workspaceScope, input);
+			}),
+		update: workspaceProcedure
+			.input(runtimeScheduleUpdateRequestSchema)
+			.output(runtimeScheduleMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.schedulesApi.update(ctx.workspaceScope, input);
+			}),
+		setEnabled: workspaceProcedure
+			.input(runtimeScheduleSetEnabledRequestSchema)
+			.output(runtimeScheduleMutationResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.schedulesApi.setEnabled(ctx.workspaceScope, input);
+			}),
+		remove: workspaceProcedure
+			.input(runtimeScheduleIdRequestSchema)
+			.output(runtimeScheduleRemoveResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.schedulesApi.remove(ctx.workspaceScope, input);
+			}),
+		runNow: workspaceProcedure
+			.input(runtimeScheduleIdRequestSchema)
+			.output(runtimeScheduleRunNowResponseSchema)
+			.mutation(async ({ ctx, input }) => {
+				return await ctx.schedulesApi.runNow(ctx.workspaceScope, input);
 			}),
 	}),
 });

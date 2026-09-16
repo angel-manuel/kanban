@@ -24,6 +24,7 @@ import {
 	getKanbanRuntimeTls,
 	isKanbanRemoteHost,
 } from "../core/runtime-endpoint";
+import { createScheduleRunner } from "../schedules/schedule-runner";
 import {
 	checkRateLimit,
 	clearRateLimit,
@@ -36,8 +37,10 @@ import {
 	validatePasscode,
 	validateSession,
 } from "../security/passcode-manager";
+import { loadWorkspaceSchedules, mutateWorkspaceSchedules } from "../state/workspace-schedules";
 import {
 	getRuntimeHomePath,
+	listWorkspaceIndexEntries,
 	loadWorkspaceBoardById,
 	loadWorkspaceContextById,
 	mutateWorkspaceState,
@@ -48,11 +51,13 @@ import { type RuntimeTrpcContext, type RuntimeTrpcWorkspaceScope, runtimeAppRout
 import { createHooksApi } from "../trpc/hooks-api";
 import { createProjectsApi } from "../trpc/projects-api";
 import { createRuntimeApi } from "../trpc/runtime-api";
+import { createSchedulesApi } from "../trpc/schedules-api";
 import { createWorkspaceApi, selectLastTurnSummary } from "../trpc/workspace-api";
 import { getGitSyncSummary } from "../workspace/git-sync";
 import { reclaimFinishedTaskWorktrees } from "../workspace/reclaim-finished-task-worktrees";
-import { getTaskWorkspaceInfo } from "../workspace/task-worktree";
+import { ensureTaskWorktreeIfDoesntExist, getTaskWorkspaceInfo } from "../workspace/task-worktree";
 import { getWebUiDir, normalizeRequestPath, readAsset } from "./assets";
+import { createCronScheduler } from "./cron-scheduler";
 import { handleHttpRequest, handleSocketUpgrade } from "./middleware";
 import type { RuntimeStateHub } from "./runtime-state-hub";
 import { createStallWatchdog } from "./stall-watchdog";
@@ -73,6 +78,7 @@ export interface CreateRuntimeServerDependencies {
 	runCommand: (command: string, cwd: string) => Promise<RuntimeCommandRunResponse>;
 	resolveProjectInputPath: (inputPath: string, basePath: string) => string;
 	assertPathIsDirectory: (targetPath: string) => Promise<void>;
+	pathIsDirectory: (path: string) => Promise<boolean>;
 	hasGitRepository: (path: string) => boolean;
 	disposeWorkspace: (
 		workspaceId: string,
@@ -256,6 +262,52 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		broadcastTaskReadyForReview: deps.runtimeStateHub.broadcastTaskReadyForReview,
 	});
 
+	// Recurring schedules. The runner materializes and launches a task; the scheduler
+	// decides when. Both live in-process, so they call the runtime API directly rather than
+	// issuing HTTP requests back to this server.
+	const scheduleRunner = createScheduleRunner({
+		ensureTerminalManagerForWorkspace: deps.ensureTerminalManagerForWorkspace,
+		startTaskSession: async (scope, input) => await runtimeApi.startTaskSession(scope, input),
+		ensureTaskWorktree: ensureTaskWorktreeIfDoesntExist,
+		broadcastWorkspaceStateUpdated: deps.runtimeStateHub.broadcastRuntimeWorkspaceStateUpdated,
+		broadcastProjectsUpdated: deps.runtimeStateHub.broadcastRuntimeProjectsUpdated,
+		log: (message) => deps.warn(`[schedules] ${message}`),
+	});
+	const cronScheduler = createCronScheduler({
+		// Every indexed project, not just the ones with a live terminal manager: a schedule
+		// has to fire for a project nobody opened this session.
+		listWorkspaces: listWorkspaceIndexEntries,
+		loadSchedules: loadWorkspaceSchedules,
+		recordScheduleRun: async (workspaceId, scheduleId, outcome, ranAt) => {
+			await mutateWorkspaceSchedules(workspaceId, (schedules) => {
+				const existing = schedules.find((entry) => entry.id === scheduleId);
+				if (!existing) {
+					return { schedules, value: null, save: false };
+				}
+				return {
+					schedules: schedules.map((entry) =>
+						entry.id === scheduleId
+							? {
+									...entry,
+									lastRunAt: ranAt,
+									lastTaskId: outcome.taskId ?? entry.lastTaskId,
+									lastStatus: outcome.status,
+									lastError: outcome.error,
+								}
+							: entry,
+					),
+					value: null,
+				};
+			});
+		},
+		runSchedule: scheduleRunner.runSchedule,
+		pathIsDirectory: deps.pathIsDirectory,
+		log: (message) => deps.warn(`[schedules] ${message}`),
+	});
+	const schedulesApi = createSchedulesApi({
+		runScheduleNow: cronScheduler.runScheduleNow,
+	});
+
 	const createTrpcContext = async (req: IncomingMessage): Promise<RuntimeTrpcContext> => {
 		const requestUrl = new URL(req.url ?? "/", "http://localhost");
 		const scope = await resolveWorkspaceScopeFromRequest(req, requestUrl);
@@ -266,6 +318,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 			workspaceApi,
 			projectsApi,
 			hooksApi,
+			schedulesApi,
 		};
 	};
 
@@ -601,6 +654,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 		log: (message) => deps.warn(`[unattended] ${message}`),
 	});
 	unattendedTaskDriver.start();
+	cronScheduler.start();
 
 	// Recover claude sessions frozen on a retryable API error, and flag the ones stuck on
 	// an error no nudge can fix.
@@ -614,6 +668,7 @@ export async function createRuntimeServer(deps: CreateRuntimeServerDependencies)
 	return {
 		url,
 		close: async () => {
+			cronScheduler.close();
 			unattendedTaskDriver.close();
 			stallWatchdog.close();
 			await Promise.all(

@@ -8,6 +8,7 @@ import ora, { type Ora } from "ora";
 import packageJson from "../package.json" with { type: "json" };
 import { disposeCliTelemetryService } from "./cline-sdk/cline-telemetry-service.js";
 import { registerHooksCommand } from "./commands/hooks";
+import { registerScheduleCommand } from "./commands/schedule";
 import { registerTaskCommand } from "./commands/task";
 import { loadGlobalRuntimeConfig, loadRuntimeConfig } from "./config/runtime-config";
 import type { RuntimeCommandRunResponse } from "./core/api-contract";
@@ -449,6 +450,7 @@ async function startServer(): Promise<{
 		runCommand: runScopedCommand,
 		resolveProjectInputPath,
 		assertPathIsDirectory,
+		pathIsDirectory,
 		hasGitRepository,
 		disposeWorkspace: disposeTrackedWorkspace,
 		collectProjectWorktreeTaskIdsForRemoval,
@@ -751,6 +753,7 @@ function createProgram(invocationArgs: string[]): Command {
 	program.addOption(new Option("--agent <id>", "Deprecated compatibility flag. Ignored.").hideHelp());
 
 	registerTaskCommand(program);
+	registerScheduleCommand(program);
 	registerHooksCommand(program);
 
 	program

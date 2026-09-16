@@ -178,6 +178,7 @@ One of the biggest cleanup themes was making ownership clearer. The system is mu
 | mapping SDK sessions into Kanban task semantics | Kanban integration layer | this is what `src/cline-sdk/` exists to do |
 | advancing the board for a normal task | browser hooks | `use-board-interactions.ts` moves cards as session state changes; `use-review-auto-actions.ts` runs the commit/PR follow-up |
 | advancing the board for an `unattended` task | `unattended-task-driver.ts` | the browser may not be open at all, so the runtime does the same job server-side |
+| deciding when a recurring task should run | `cron-scheduler.ts` + `src/schedules/` | schedules are per project and must fire with no browser attached |
 | UI rendering state for detail view and sidebar | browser hooks and components | local UI state belongs in the frontend |
 | live state fanout to the browser | `runtime-state-hub.ts` | the browser should react to streamed state, not poll |
 
@@ -374,6 +375,38 @@ is watching: a kill switch (`KANBAN_UNATTENDED_DRIVER`), a cap on commit/PR inje
 task, a maximum run duration after which the task is parked in Review for a human, and a
 refusal to inject into a session that is not live. Parking never stops the agent and never
 deletes a worktree.
+
+### Running a task on a schedule
+
+A schedule is a task template plus a recurrence, stored per project in `schedules.json`
+beside `board.json`. It is deliberately not part of the board: the browser owns `board.json`
+through a debounced whole-snapshot save and would clobber the run bookkeeping the server
+writes.
+
+`src/server/cron-scheduler.ts` ticks over every *indexed* workspace, not just the ones with
+a live terminal manager - a schedule has to fire for a project nobody opened this session.
+Due-ness is decided by the pure function in `src/schedules/schedule-firing.ts` over the
+half-open window `(previousTick, now]`, which makes the poll interval an implementation
+detail rather than a correctness hazard: changing it cannot change which occurrences fire.
+
+Missed runs are skipped rather than caught up, and two things implement that. The tick
+cursor is seeded at startup with the current time, so nothing from before the process was
+up can fall inside a window. And a gap longer than the lookback is clamped, so waking a
+laptop after eight hours runs at most the occurrence that just came due instead of replaying
+the night.
+
+When a schedule fires, `schedule-runner.ts` does what `kanban task start` does, in the same
+order: create the card in Backlog, ensure the worktree, start the session, then move the
+card to In Progress. Backlog first is deliberate - a failed worktree or a missing agent
+binary leaves a card the user can inspect and start by hand, rather than one stranded in In
+Progress with no session behind it. The card is created with `unattended: true`, so the
+unattended driver above takes it the rest of the way to Done.
+
+Cron parsing lives behind `src/schedules/schedule-occurrences.ts`, the only module that may
+import `cron-parser` or `cronstrue`. Those are server-side: cron-parser pulls in luxon, and
+the web UI has its own `node_modules`. The browser receives a precomputed `nextRunAt` and a
+`description` string instead, which is also why `nextRunAt` is derived on every read rather
+than persisted.
 
 ### Opening settings and changing Cline provider state
 
