@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { readFile, realpath, rm } from "node:fs/promises";
+import { realpath, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { z } from "zod";
@@ -19,6 +19,7 @@ import {
 import { createGitProcessEnv } from "../core/git-process-env";
 import { updateTaskDependencies } from "../core/task-board-mutations";
 import { type LockRequest, lockedFileSystem } from "../fs/locked-file-system";
+import { formatSchemaIssues, parsePersistedStateFile, readJsonFile } from "./persisted-state-file";
 
 const RUNTIME_HOME_PARENT_DIR = ".cline";
 const RUNTIME_HOME_DIR = "kanban";
@@ -211,66 +212,6 @@ function getWorkspacesRootLockRequest(): LockRequest {
 		type: "directory",
 		lockfileName: ".workspaces.lock",
 	};
-}
-
-function isNodeErrorWithCode(error: unknown, code: string): boolean {
-	return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code;
-}
-
-async function readJsonFile(path: string): Promise<unknown | null> {
-	try {
-		const raw = await readFile(path, "utf8");
-		try {
-			return JSON.parse(raw) as unknown;
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(`Malformed JSON in ${path}. ${message}`);
-		}
-	} catch (error) {
-		if (isNodeErrorWithCode(error, "ENOENT")) {
-			return null;
-		}
-		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Could not read JSON file at ${path}. ${message}`);
-	}
-}
-
-function formatSchemaIssuePath(pathSegments: PropertyKey[]): string {
-	if (pathSegments.length === 0) {
-		return "root";
-	}
-	return pathSegments
-		.map((segment) => {
-			if (typeof segment === "number") {
-				return `[${segment}]`;
-			}
-			return String(segment);
-		})
-		.join(".");
-}
-
-function formatSchemaIssues(error: z.ZodError): string {
-	return error.issues.map((issue) => `${formatSchemaIssuePath(issue.path)}: ${issue.message}`).join("; ");
-}
-
-function parsePersistedStateFile<T>(
-	filePath: string,
-	fileLabel: string,
-	raw: unknown | null,
-	schema: z.ZodType<T>,
-	defaultValue: T,
-): T {
-	if (raw === null) {
-		return defaultValue;
-	}
-	const parsed = schema.safeParse(raw);
-	if (!parsed.success) {
-		throw new Error(
-			`Invalid ${fileLabel} file at ${filePath}. ` +
-				`Fix or remove the file. Validation errors: ${formatSchemaIssues(parsed.error)}`,
-		);
-	}
-	return parsed.data;
 }
 
 function parseWorkspaceIndex(rawIndex: unknown | null): WorkspaceIndexFile {

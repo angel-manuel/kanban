@@ -15,6 +15,7 @@ import { GitHistoryView } from "@/components/git-history-view";
 import { KanbanBoard } from "@/components/kanban-board";
 import { ProjectNavigationPanel } from "@/components/project-navigation-panel";
 import { RuntimeSettingsDialog, type RuntimeSettingsSection } from "@/components/runtime-settings-dialog";
+import { SchedulesDialog } from "@/components/schedules/schedules-dialog";
 import { StartupOnboardingDialog } from "@/components/startup-onboarding-dialog";
 import { TaskCreateDialog } from "@/components/task-create-dialog";
 import { TaskInlineCreateCard } from "@/components/task-inline-create-card";
@@ -85,6 +86,7 @@ export default function App(): ReactElement {
 	const [sessions, setSessions] = useState<Record<string, RuntimeTaskSessionSummary>>({});
 	const [canPersistWorkspaceState, setCanPersistWorkspaceState] = useState(false);
 	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+	const [isSchedulesOpen, setIsSchedulesOpen] = useState(false);
 	const [settingsInitialSection, setSettingsInitialSection] = useState<RuntimeSettingsSection | null>(null);
 	const [homeSidebarSection, setHomeSidebarSection] = useState<"projects" | "agent">("projects");
 	const [isClearTrashDialogOpen, setIsClearTrashDialogOpen] = useState(false);
@@ -869,6 +871,7 @@ export default function App(): ReactElement {
 						isTerminalOpen={selectedCard ? isDetailTerminalOpen : showHomeBottomTerminal}
 						isTerminalLoading={selectedCard ? isDetailTerminalStarting : isHomeTerminalStarting}
 						onOpenSettings={handleOpenSettings}
+						onOpenSchedules={currentProjectId ? () => setIsSchedulesOpen(true) : undefined}
 						showDebugButton={debugModeEnabled}
 						onOpenDebugDialog={debugModeEnabled ? handleOpenDebugDialog : undefined}
 						shortcuts={shortcuts}
@@ -1081,6 +1084,7 @@ export default function App(): ReactElement {
 						) : null}
 					</div>
 				</div>
+				<SchedulesDialog open={isSchedulesOpen} onOpenChange={setIsSchedulesOpen} workspaceId={currentProjectId} />
 				<RuntimeSettingsDialog
 					open={isSettingsOpen}
 					workspaceId={settingsWorkspaceId}

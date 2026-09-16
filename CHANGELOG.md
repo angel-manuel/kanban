@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Recurring schedules: run a task against a project on a daily, weekly or cron schedule ("every day at 02:00, refactor big files"). Manage them from the new Schedules dialog or `kanban schedule`. A scheduled run starts on its own and opens a commit or pull request when it finishes; occurrences missed while Kanban was closed are skipped
 - Tasks marked unattended now advance on their own: the runtime moves the card through Review, runs the configured commit or PR follow-up, files it under Done, and reclaims the worktree, all without a browser tab open
 
 ## [0.1.70]

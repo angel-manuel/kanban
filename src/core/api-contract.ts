@@ -194,6 +194,154 @@ export const runtimeBoardDataSchema = z.object({
 });
 export type RuntimeBoardData = z.infer<typeof runtimeBoardDataSchema>;
 
+// ---------------------------------------------------------------------------
+// Recurring task schedules
+//
+// A schedule is a task template plus a recurrence. When it fires, the runtime materializes
+// a board card from the template, flags it `unattended`, and starts it - so the work runs
+// and reaches Done whether or not anyone has a browser open.
+//
+// Persisted per project in `schedules.json`, beside `board.json`. Kept out of the board
+// because the browser owns that file through a debounced whole-snapshot save and would
+// clobber the run bookkeeping the server writes here.
+// ---------------------------------------------------------------------------
+
+const runtimeScheduleHourSchema = z.number().int().min(0).max(23);
+const runtimeScheduleMinuteSchema = z.number().int().min(0).max(59);
+
+export const runtimeScheduleRecurrenceSchema = z.discriminatedUnion("kind", [
+	z.object({
+		kind: z.literal("daily"),
+		hour: runtimeScheduleHourSchema,
+		minute: runtimeScheduleMinuteSchema,
+	}),
+	z.object({
+		kind: z.literal("weekly"),
+		hour: runtimeScheduleHourSchema,
+		minute: runtimeScheduleMinuteSchema,
+		// 0 = Sunday, matching cron.
+		weekdays: z.array(z.number().int().min(0).max(6)).min(1),
+	}),
+	z.object({
+		kind: z.literal("cron"),
+		expression: z.string().min(1).max(200),
+	}),
+]);
+export type RuntimeScheduleRecurrence = z.infer<typeof runtimeScheduleRecurrenceSchema>;
+
+// "skip" drops an occurrence while the previous run is still on the board, so a nightly job
+// that takes longer than a day cannot fan out worktrees without bound.
+export const runtimeScheduleOverlapPolicySchema = z.enum(["skip", "allow"]);
+export type RuntimeScheduleOverlapPolicy = z.infer<typeof runtimeScheduleOverlapPolicySchema>;
+
+export const runtimeScheduleRunStatusSchema = z.enum(["ok", "failed", "skipped_overlap", "invalid"]);
+export type RuntimeScheduleRunStatus = z.infer<typeof runtimeScheduleRunStatusSchema>;
+
+export const runtimeScheduleTaskTemplateSchema = z.object({
+	prompt: z.string().min(1),
+	title: z.string().optional(),
+	startInPlanMode: z.boolean().default(false),
+	autoReviewMode: runtimeTaskAutoReviewModeSchema.default("pr"),
+	agentId: runtimeAgentIdSchema.optional(),
+	clineSettings: runtimeTaskClineSettingsSchema.optional(),
+	// null resolves against the repo's default branch at fire time, so a schedule keeps
+	// working when the default branch is renamed.
+	baseRef: z.string().nullable().default(null),
+});
+export type RuntimeScheduleTaskTemplate = z.infer<typeof runtimeScheduleTaskTemplateSchema>;
+
+export const runtimeScheduleSchema = z.object({
+	id: z.string().min(1),
+	name: z.string().min(1),
+	enabled: z.boolean(),
+	recurrence: runtimeScheduleRecurrenceSchema,
+	// IANA zone. Stored rather than a fixed offset so a wall-clock time survives DST.
+	timezone: z.string().min(1),
+	overlapPolicy: runtimeScheduleOverlapPolicySchema.default("skip"),
+	task: runtimeScheduleTaskTemplateSchema,
+	lastRunAt: z.number().nullable().default(null),
+	lastTaskId: z.string().nullable().default(null),
+	lastStatus: runtimeScheduleRunStatusSchema.nullable().default(null),
+	lastError: z.string().nullable().default(null),
+	createdAt: z.number(),
+	updatedAt: z.number(),
+});
+export type RuntimeSchedule = z.infer<typeof runtimeScheduleSchema>;
+
+export const runtimeSchedulesFileSchema = z.object({
+	version: z.literal(1),
+	schedules: z.array(runtimeScheduleSchema).default([]),
+});
+export type RuntimeSchedulesFile = z.infer<typeof runtimeSchedulesFileSchema>;
+
+// Wire shape. nextRunAt, description and cronError are derived on read, never persisted -
+// storing them would drift the moment the expression, the zone, or the tz database changes.
+export const runtimeScheduleSummarySchema = runtimeScheduleSchema.extend({
+	nextRunAt: z.number().nullable(),
+	description: z.string(),
+	cronError: z.string().nullable(),
+});
+export type RuntimeScheduleSummary = z.infer<typeof runtimeScheduleSummarySchema>;
+
+export const runtimeScheduleListResponseSchema = z.object({
+	schedules: z.array(runtimeScheduleSummarySchema),
+	serverTimezone: z.string(),
+});
+export type RuntimeScheduleListResponse = z.infer<typeof runtimeScheduleListResponseSchema>;
+
+export const runtimeScheduleCreateRequestSchema = z.object({
+	name: z.string().min(1),
+	enabled: z.boolean().default(true),
+	recurrence: runtimeScheduleRecurrenceSchema,
+	timezone: z.string().min(1),
+	overlapPolicy: runtimeScheduleOverlapPolicySchema.default("skip"),
+	task: runtimeScheduleTaskTemplateSchema,
+});
+export type RuntimeScheduleCreateRequest = z.infer<typeof runtimeScheduleCreateRequestSchema>;
+
+export const runtimeScheduleUpdateRequestSchema = z.object({
+	scheduleId: z.string().min(1),
+	name: z.string().min(1).optional(),
+	enabled: z.boolean().optional(),
+	recurrence: runtimeScheduleRecurrenceSchema.optional(),
+	timezone: z.string().min(1).optional(),
+	overlapPolicy: runtimeScheduleOverlapPolicySchema.optional(),
+	task: runtimeScheduleTaskTemplateSchema.optional(),
+});
+export type RuntimeScheduleUpdateRequest = z.infer<typeof runtimeScheduleUpdateRequestSchema>;
+
+export const runtimeScheduleIdRequestSchema = z.object({
+	scheduleId: z.string().min(1),
+});
+export type RuntimeScheduleIdRequest = z.infer<typeof runtimeScheduleIdRequestSchema>;
+
+export const runtimeScheduleSetEnabledRequestSchema = z.object({
+	scheduleId: z.string().min(1),
+	enabled: z.boolean(),
+});
+export type RuntimeScheduleSetEnabledRequest = z.infer<typeof runtimeScheduleSetEnabledRequestSchema>;
+
+export const runtimeScheduleMutationResponseSchema = z.object({
+	ok: z.boolean(),
+	schedule: runtimeScheduleSummarySchema.nullable(),
+	error: z.string().optional(),
+});
+export type RuntimeScheduleMutationResponse = z.infer<typeof runtimeScheduleMutationResponseSchema>;
+
+export const runtimeScheduleRemoveResponseSchema = z.object({
+	ok: z.boolean(),
+	removed: z.boolean(),
+});
+export type RuntimeScheduleRemoveResponse = z.infer<typeof runtimeScheduleRemoveResponseSchema>;
+
+export const runtimeScheduleRunNowResponseSchema = z.object({
+	ok: z.boolean(),
+	status: runtimeScheduleRunStatusSchema,
+	taskId: z.string().nullable(),
+	error: z.string().optional(),
+});
+export type RuntimeScheduleRunNowResponse = z.infer<typeof runtimeScheduleRunNowResponseSchema>;
+
 export const runtimeGitRepositoryInfoSchema = z.object({
 	currentBranch: z.string().nullable(),
 	defaultBranch: z.string().nullable(),

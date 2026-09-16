@@ -4,6 +4,7 @@ import {
 	ArrowLeft,
 	ArrowUp,
 	Bug,
+	CalendarClock,
 	Check,
 	ChevronDown,
 	CircleArrowDown,
@@ -298,6 +299,7 @@ export function TopBar({
 	onToggleGitHistory,
 	isGitHistoryOpen,
 	onOpenSettings,
+	onOpenSchedules,
 	showDebugButton,
 	onOpenDebugDialog,
 	shortcuts,
@@ -333,6 +335,7 @@ export function TopBar({
 	onToggleGitHistory?: () => void;
 	isGitHistoryOpen?: boolean;
 	onOpenSettings?: (section?: SettingsSection) => void;
+	onOpenSchedules?: () => void;
 	showDebugButton?: boolean;
 	onOpenDebugDialog?: () => void;
 	shortcuts?: RuntimeProjectShortcut[];
@@ -671,6 +674,19 @@ export function TopBar({
 								/>
 							) : null}
 						</>
+					) : null}
+
+					{/* Schedules are per project, so only offer them once one is selected. */}
+					{onOpenSchedules ? (
+						<Button
+							variant="ghost"
+							size="sm"
+							icon={<CalendarClock size={16} />}
+							onClick={onOpenSchedules}
+							aria-label="Schedules"
+							data-testid="open-schedules-button"
+							className={cn(isMobile && MOBILE_TOUCH_TARGET)}
+						/>
 					) : null}
 
 					{/* Settings: always visible */}
