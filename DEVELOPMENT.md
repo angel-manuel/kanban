@@ -170,6 +170,22 @@ npm run unlink
 - `npm run web:test`: run web UI tests
 - `npm run check`: lint, typecheck, and test runtime package
 
+## Dependencies and security updates
+
+This fork owns its own dependency maintenance — upstream `cline/kanban` no longer
+ships regular updates. Dependabot batches version updates weekly and opens
+security updates individually; nothing auto-merges.
+
+Dependencies live in three independent projects, each with its own lockfile
+(`package.json`, `web-ui/package.json`, `packages/desktop/package.json`), so any
+bump or audit has to be repeated per project. `npm run install:all` covers all
+three.
+
+Note that npm `overrides` floors are **not** managed by Dependabot and need a
+periodic manual review. See [`docs/dependency-policy.md`](./docs/dependency-policy.md)
+for the triage policy, the override review checklist, and the upstream sync
+cadence.
+
 ## Tests
 
 - `test/integration`: integration tests for runtime behavior and startup flows

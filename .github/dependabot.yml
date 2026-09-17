@@ -1,0 +1,124 @@
+# Dependency automation for this fork.
+#
+# Upstream (cline/kanban) no longer ships regular dependency maintenance, so this
+# fork owns it. See docs/dependency-policy.md for the triage policy.
+#
+# Notes:
+#   - No auto-merge is configured anywhere. Every PR is reviewed by a human.
+#   - `target-branch` is intentionally omitted so Dependabot always targets the
+#     repository's default branch, whatever it is currently named.
+#   - Version updates are grouped and batched weekly to keep review load low.
+#     Security updates are deliberately left UNGROUPED so each one arrives as its
+#     own PR as soon as the advisory lands.
+#   - Dependabot does NOT manage npm `overrides` blocks. The stale-pin floors in
+#     the three package.json files must be reviewed by hand - see the quarterly
+#     checklist in docs/dependency-policy.md.
+
+version: 2
+
+updates:
+  # ---------------------------------------------------------------- runtime --
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    # Give a freshly published version time to be pulled if it turns out to be
+    # compromised, rather than installing it within hours of release.
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+    groups:
+      runtime-dev-dependencies:
+        applies-to: version-updates
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      runtime-production-dependencies:
+        applies-to: version-updates
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+
+  # ----------------------------------------------------------------- web-ui --
+  - package-ecosystem: npm
+    directory: "/web-ui"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - web-ui
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+    groups:
+      web-ui-dev-dependencies:
+        applies-to: version-updates
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      # Radix ships a large number of separately versioned packages; batching
+      # them keeps a single weekly PR instead of a dozen.
+      web-ui-radix:
+        applies-to: version-updates
+        patterns:
+          - "@radix-ui/*"
+      web-ui-production-dependencies:
+        applies-to: version-updates
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+
+  # -------------------------------------------------------- packages/desktop --
+  - package-ecosystem: npm
+    directory: "/packages/desktop"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - desktop
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+    groups:
+      desktop-dev-dependencies:
+        applies-to: version-updates
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+
+  # --------------------------------------------------------- github-actions --
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - ci
+    groups:
+      github-actions:
+        applies-to: version-updates
+        patterns:
+          - "*"

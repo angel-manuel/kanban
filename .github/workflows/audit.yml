@@ -1,0 +1,88 @@
+name: Security audit
+
+# Dependabot covers dependency *ranges* declared in package.json. It does not
+# manage the npm `overrides` blocks this repo relies on, so a stale override
+# floor can silently hold a vulnerable transitive package forever. This job
+# audits the resolved lockfiles directly, which is where that shows up.
+#
+# See docs/dependency-policy.md.
+
+on:
+  schedule:
+    # Mondays 06:30 UTC - shortly after the Dependabot version-update window.
+    - cron: "30 6 * * 1"
+  pull_request:
+    paths:
+      - "**/package.json"
+      - "**/package-lock.json"
+      - ".github/workflows/audit.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # `npm audit` resolves straight from the lockfile, so no install is needed.
+      - name: Audit workspaces
+        id: audit
+        run: |
+          set -uo pipefail
+          status=0
+
+          {
+            echo "## npm audit"
+            echo
+            echo "| Workspace | Critical | High | Moderate | Low |"
+            echo "| --- | ---: | ---: | ---: | ---: |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for dir in "." "web-ui" "packages/desktop"; do
+            report=$(npm audit --json --prefix "$dir" 2>/dev/null || true)
+
+            counts=$(node -e '
+              let raw = "";
+              process.stdin.on("data", (d) => (raw += d));
+              process.stdin.on("end", () => {
+                let v = { critical: 0, high: 0, moderate: 0, low: 0 };
+                try {
+                  v = { ...v, ...JSON.parse(raw).metadata.vulnerabilities };
+                } catch {}
+                console.log(`${v.critical} ${v.high} ${v.moderate} ${v.low}`);
+              });
+            ' <<< "$report")
+
+            read -r critical high moderate low <<< "$counts"
+            echo "| \`$dir\` | $critical | $high | $moderate | $low |" >> "$GITHUB_STEP_SUMMARY"
+
+            if [ "$critical" -gt 0 ] || [ "$high" -gt 0 ]; then
+              echo "::error title=Vulnerable dependencies in $dir::$critical critical, $high high"
+              status=1
+            elif [ "$moderate" -gt 0 ]; then
+              echo "::warning title=Vulnerable dependencies in $dir::$moderate moderate, $low low"
+            fi
+          done
+
+          {
+            echo
+            echo "High and critical findings fail this job. Moderate and low are reported only."
+            echo "Triage policy: \`docs/dependency-policy.md\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$status"

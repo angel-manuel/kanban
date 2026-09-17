@@ -150,7 +150,14 @@ jobs:
             ${{ steps.compare.outputs.link }}
           prerelease: ${{ contains(steps.resolve_tag.outputs.tag, '-') }}
 
+      # The Slack announcement is upstream-specific (token + channel). On a fork
+      # without SLACK_RELEASE_BOT_TOKEN this step is skipped rather than failing
+      # the run after the package has already been published. The `secrets`
+      # context is not available in step-level `if`, so it is mapped via `env`.
       - name: Post release to Slack
+        if: env.SLACK_RELEASE_BOT_TOKEN != ''
+        env:
+          SLACK_RELEASE_BOT_TOKEN: ${{ secrets.SLACK_RELEASE_BOT_TOKEN }}
         uses: slackapi/slack-github-action@v3.0.1
         with:
           method: chat.postMessage
