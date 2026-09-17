@@ -2,6 +2,11 @@
 
 This folder is the starting point for engineers working on Kanban itself.
 
+> This repository is a modified fork of [cline/kanban](https://github.com/cline/kanban), licensed
+> under Apache-2.0 and not affiliated with or endorsed by Cline Bot Inc. See
+> [Attribution and changes](../README.md#attribution-and-changes). These docs describe *this fork's*
+> architecture, which may have diverged from upstream.
+
 This follows the usual split a small engineering team would want:
 
 - `README.md` explains the product, local setup, and everyday usage.

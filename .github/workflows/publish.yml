@@ -86,6 +86,9 @@ jobs:
         env:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          FEATUREBASE_ORGANIZATION: ${{ secrets.FEATUREBASE_ORGANIZATION }}
           OTEL_TELEMETRY_ENABLED: ${{ secrets.OTEL_TELEMETRY_ENABLED }}
           OTEL_LOGS_EXPORTER: otlp
           OTEL_METRICS_EXPORTER: otlp
@@ -96,11 +99,18 @@ jobs:
       # npm publish re-triggers prepublishOnly as a lifecycle hook, which
       # rebuilds the web-ui from scratch. Without these env vars, the
       # rebuild produces a bundle with no PostHog key baked in.
+      #
+      # All telemetry here is opt-in: leave these secrets unset and the published
+      # build reports nothing anywhere. They must never be set to the upstream
+      # project's Sentry / PostHog / Featurebase accounts.
       - name: Publish to npm (OIDC trusted publishing)
         run: npm publish --access public
         env:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          FEATUREBASE_ORGANIZATION: ${{ secrets.FEATUREBASE_ORGANIZATION }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           OTEL_TELEMETRY_ENABLED: ${{ secrets.OTEL_TELEMETRY_ENABLED }}
           OTEL_LOGS_EXPORTER: otlp

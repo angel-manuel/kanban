@@ -6,7 +6,20 @@ import type { RuntimeClineProviderSettings } from "@/runtime/types";
 
 const FEATUREBASE_SDK_ID = "featurebase-sdk";
 const FEATUREBASE_SDK_SRC = "https://do.featurebase.app/js/sdk.js";
-const FEATUREBASE_ORGANIZATION = "cline";
+/**
+ * Feedback routing is opt-in. Unset in this fork so user feedback is never filed on the upstream
+ * project's Featurebase board; set FEATUREBASE_ORGANIZATION at build time to enable the widget.
+ *
+ * Read lazily rather than captured at module load so tests can exercise both the configured and
+ * unconfigured paths.
+ */
+export function featurebaseOrganization(): string | null {
+	return import.meta.env.FEATUREBASE_ORGANIZATION?.trim() || null;
+}
+
+export function isFeaturebaseConfigured(): boolean {
+	return featurebaseOrganization() !== null;
+}
 const FEATUREBASE_FEEDBACK_OVERLAY_SELECTOR = ".fb-feedback-widget-overlay";
 const FEATUREBASE_FEEDBACK_HIDDEN_CLASS = "fb-feedback-widget-overlay-hidden";
 
@@ -153,7 +166,8 @@ export function useFeaturebaseFeedbackWidget(input: {
 	}
 
 	const ensureFeedbackWidgetInitialized = useCallback(async (): Promise<void> => {
-		if (widgetInitializedRef.current) {
+		const organization = featurebaseOrganization();
+		if (widgetInitializedRef.current || organization === null) {
 			return;
 		}
 
@@ -166,7 +180,7 @@ export function useFeaturebaseFeedbackWidget(input: {
 			featurebase(
 				"initialize_feedback_widget",
 				{
-					organization: FEATUREBASE_ORGANIZATION,
+					organization,
 					theme: "dark",
 					locale: "en",
 					metadata: { app: "kanban" },
@@ -218,7 +232,8 @@ export function useFeaturebaseFeedbackWidget(input: {
 
 	const identifyWithRetries = useCallback(
 		async (attempt: number, retryIndex: number): Promise<void> => {
-			if (!workspaceId || !isAuthenticated) {
+			const organization = featurebaseOrganization();
+			if (!workspaceId || !isAuthenticated || organization === null) {
 				return;
 			}
 
@@ -239,7 +254,7 @@ export function useFeaturebaseFeedbackWidget(input: {
 					featurebase(
 						"identify",
 						{
-							organization: FEATUREBASE_ORGANIZATION,
+							organization,
 							featurebaseJwt: tokenResponse.featurebaseJwt,
 						},
 						(error) => {

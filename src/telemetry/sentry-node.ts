@@ -1,7 +1,14 @@
 import * as Sentry from "@sentry/node";
 import packageJson from "../../package.json" with { type: "json" };
 
-const nodeSentryDsn = "https://b597cbea54f43704439be10d843699b0@o4511098366263296.ingest.us.sentry.io/4511098558087168";
+import { KANBAN_PACKAGE_NAME } from "../core/kanban-package";
+
+/**
+ * Error reporting is opt-in. This is a fork, so it ships without a DSN: a hardcoded one would
+ * send this build's crash reports to the upstream project's Sentry account. Set SENTRY_DSN to
+ * your own project to turn it on.
+ */
+const nodeSentryDsn = process.env.SENTRY_DSN?.trim() ?? "";
 
 const appVersion = typeof packageJson.version === "string" ? packageJson.version : "0.1.0";
 
@@ -13,7 +20,7 @@ if (nodeSentryDsn) {
 	Sentry.init({
 		dsn: nodeSentryDsn,
 		environment: nodeSentryEnvironment,
-		release: `kanban@${appVersion}`,
+		release: `${KANBAN_PACKAGE_NAME}@${appVersion}`,
 		sendDefaultPii: false,
 		initialScope: {
 			tags: {

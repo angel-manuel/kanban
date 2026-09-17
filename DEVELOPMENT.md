@@ -237,21 +237,33 @@ For a full technical breakdown, see:
 
 - `.plan/docs/runtime-hooks-architecture.md`
 
-## PostHog telemetry config
+## Telemetry config
 
-The web UI reads PostHog settings at build time:
+All telemetry in this fork is **opt-in and off by default**. Upstream hardcodes its own Sentry
+DSNs, PostHog host, and Featurebase organization; this fork does not, because a fork that
+inherited them would silently report its users' crashes, usage, and feedback into Cline Bot Inc.'s
+accounts. Every destination below is read from the environment at build time, and each subsystem
+stays inert when its variable is unset.
 
-- `POSTHOG_KEY`
-- `POSTHOG_HOST`
+| Variable | Subsystem | Unset behavior |
+| --- | --- | --- |
+| `POSTHOG_KEY` | Product analytics (web) | Analytics never initialize |
+| `POSTHOG_HOST` | Product analytics endpoint | Analytics never initialize (no default host) |
+| `SENTRY_DSN` | Error reporting (node + web) | Sentry never initializes |
+| `SENTRY_ORG` | Sourcemap upload target | Upload step is skipped |
+| `SENTRY_AUTH_TOKEN` | Sourcemap upload auth | Upload step is skipped |
+| `FEATUREBASE_ORGANIZATION` | In-app feedback widget | "Send feedback" button is hidden |
 
 Local development:
-- Set these in `web-ui/.env.local` (see `web-ui/.env.example`).
-- If `POSTHOG_KEY` is missing, telemetry does not initialize.
+- Set these in `web-ui/.env.local` (see `web-ui/.env.example`) for the web-side variables.
+- `SENTRY_DSN` and `SENTRY_ORG` are read from the process environment for the node runtime and the
+  build script respectively.
 
 Release builds:
-- The publish workflow injects `POSTHOG_KEY` and `POSTHOG_HOST` from GitHub Secrets.
-- `POSTHOG_HOST` is optional and defaults to `https://data.cline.bot`.
+- The publish workflow injects all of the above from GitHub Secrets.
+- Leave a secret unset and the published build reports nothing for that subsystem.
+- **Never point these at Cline Bot Inc.'s accounts.** Use your own projects or leave them unset.
 
 Result:
-- Official releases have telemetry enabled.
-- Forks and source builds have telemetry disabled unless a key is explicitly provided.
+- Source builds and unconfigured releases send nothing anywhere.
+- Telemetry only runs where a maintainer has explicitly supplied their own destination.

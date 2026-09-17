@@ -1,6 +1,8 @@
 import * as Sentry from "@sentry/react";
 
-const sentryDsn = "https://061e8f494493d1cf3c7c918563cc0783@o4511098366263296.ingest.us.sentry.io/4511098568769536";
+// Opt-in only. This fork ships without a DSN so it never reports to the upstream project's
+// Sentry account; set SENTRY_DSN at build time to point it at your own.
+const sentryDsn = import.meta.env.SENTRY_DSN?.trim() ?? "";
 const sentryEnvironment = import.meta.env.MODE;
 
 let initialized = false;

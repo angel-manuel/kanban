@@ -2,6 +2,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { KANBAN_PACKAGE_NAME } from "../core/kanban-package";
+
 export enum UpdatePackageManager {
 	NPM = "npm",
 	PNPM = "pnpm",
@@ -619,7 +621,7 @@ export async function runOnDemandUpdate(options: OnDemandUpdateOptions): Promise
 		};
 	}
 
-	const packageName = options.packageName ?? "kanban";
+	const packageName = options.packageName ?? KANBAN_PACKAGE_NAME;
 	const installation = detectAutoUpdateInstallation({
 		currentVersion: options.currentVersion,
 		packageName,
@@ -725,7 +727,7 @@ export async function runAutoUpdateCheck(options: UpdateStartupOptions): Promise
 		return;
 	}
 
-	const packageName = options.packageName ?? "kanban";
+	const packageName = options.packageName ?? KANBAN_PACKAGE_NAME;
 	const installation = detectAutoUpdateInstallation({
 		currentVersion: options.currentVersion,
 		packageName,

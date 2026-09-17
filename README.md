@@ -1,48 +1,53 @@
-## npx kanban (Research Preview)
+## Kanban (fork) — Research Preview
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/2aa3dcc7-94e3-4076-bcfe-6d0272007cfe" width="100%" />
-</p>
+> [!IMPORTANT]
+> **This is a modified fork, not the official Cline project.**
+> It is based on [cline/kanban](https://github.com/cline/kanban) by Cline Bot Inc., licensed under
+> [Apache License 2.0](./LICENSE), and has been modified by contributors to
+> [angel-manuel/kanban](https://github.com/angel-manuel/kanban).
+> This fork is **not affiliated with, sponsored by, or endorsed by Cline Bot Inc.**
+> "Cline" is a name of Cline Bot Inc.; the Apache-2.0 license grants no trademark rights
+> (see [Section 6](./LICENSE)). Please report issues with this fork to
+> [this repository](https://github.com/angel-manuel/kanban/issues), **not** to upstream.
+> See [Attribution and changes](#attribution-and-changes) for details.
 
 A replacement for your IDE better suited for running many agents in parallel and reviewing diffs. Each task card gets its own terminal and worktree, all handled for you automatically. Enable auto-commit and link cards together to create dependency chains that complete large amounts of work autonomously.
 
 > [!WARNING]
-> Kanban is a research preview and uses experimental features of CLI agents like bypassing permissions and runtime hooks for more autonomy. We'd love your feedback in #kanban on our [discord](https://discord.gg/cline).
+> Kanban is a research preview and uses experimental features of CLI agents like bypassing permissions and runtime hooks for more autonomy.
 
 <div align="left">
 <table>
 <tbody>
 <td align="center">
-<a href="https://www.npmjs.com/package/kanban" target="_blank">NPM</a>
+<a href="https://github.com/angel-manuel/kanban" target="_blank">GitHub (this fork)</a>
 </td>
 <td align="center">
-<a href="https://github.com/cline/kanban" target="_blank">GitHub</a>
+<a href="https://github.com/angel-manuel/kanban/issues" target="_blank">Issues</a>
 </td>
 <td align="center">
-<a href="https://github.com/cline/kanban/issues" target="_blank">Issues</a>
-</td>
-<td align="center">
-<a href="https://github.com/cline/kanban/discussions/categories/feature-requests?discussions_q=is%3Aopen+category%3A%22Feature+Requests%22+sort%3Atop" target="_blank">Feature Requests</a>
-</td>
-<td align="center">
-<a href="https://discord.gg/cline" target="_blank">Discord</a>
-</td>
-<td align="center">
-<a href="https://x.com/cline" target="_blank">@cline</a>
+<a href="https://github.com/cline/kanban" target="_blank">Upstream project</a>
 </td>
 </tbody>
 </table>
 </div>
 
 ### 1. Open kanban
-```bash
-# Run directly (no install required)
-npx kanban
 
-# Or install globally
-npm i -g kanban
+```bash
+# Build and run from source (this fork is not published to npm)
+git clone https://github.com/angel-manuel/kanban.git
+cd kanban
+npm run install:all
+npm run link   # builds, then links the `kanban` binary globally
 kanban
 ```
+
+> [!NOTE]
+> The upstream project publishes the unscoped `kanban` package on npm. This fork is configured
+> to publish as `@angel-manuel/kanban` so it can never be confused with it, but no release has
+> been published. Running `npx kanban` installs **upstream**, not this fork.
+
 Run this from the root of any git repo. Kanban will detect your installed CLI agent and launch a local running webserver in your browser. No account or setup required, it works right out of the box.
 
 ### 2. Create tasks
@@ -72,4 +77,34 @@ Click the branch name in the navbar to open a full git interface to browse commi
 
 ---
 
-[Apache 2.0 © 2026 Cline Bot Inc.](./LICENSE)
+## Attribution and changes
+
+This program is a fork of [cline/kanban](https://github.com/cline/kanban).
+
+- **Original work:** Kanban, Copyright 2026 Cline Bot Inc., licensed under the
+  [Apache License, Version 2.0](./LICENSE). The `LICENSE` file is preserved unmodified.
+- **This distribution:** contains modifications made by contributors to
+  [angel-manuel/kanban](https://github.com/angel-manuel/kanban), and is distributed under the
+  same Apache License 2.0. Modifications are recorded in the git history of this repository and
+  in [`CHANGELOG.md`](./CHANGELOG.md).
+- **Changed files carry no separate notice** beyond this statement; consult
+  `git log` / `git diff` against the upstream remote for the exact set of changes.
+- **No trademark license.** Apache-2.0 Section 6 grants no rights to the trade names, trademarks,
+  service marks, or product names of the licensor. "Cline" and related marks belong to
+  Cline Bot Inc. and are used here only to identify the upstream origin of this code and to
+  describe interoperability with Cline software. This fork is not affiliated with, sponsored by,
+  or endorsed by Cline Bot Inc.
+- **Upstream dependencies.** This project depends on the `@clinebot/*` packages published by
+  Cline Bot Inc. Those are unmodified third-party dependencies, consumed under their own terms.
+- **No telemetry to upstream.** Error reporting, analytics, and in-app feedback are opt-in and
+  disabled by default in this fork, so it never reports to Cline Bot Inc.'s Sentry, PostHog, or
+  Featurebase accounts. See [Telemetry config](./DEVELOPMENT.md#telemetry-config).
+
+Support requests, bug reports, and feature ideas for this fork belong in
+[angel-manuel/kanban](https://github.com/angel-manuel/kanban/issues) and must not be directed at
+Cline Bot Inc. or the upstream project's support channels.
+
+---
+
+Licensed under the [Apache License 2.0](./LICENSE). Original work Copyright 2026 Cline Bot Inc.;
+modifications Copyright 2026 the angel-manuel/kanban contributors.

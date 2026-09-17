@@ -1,6 +1,12 @@
-# Contributing to Kanban
+# Contributing to Kanban (angel-manuel fork)
 
-Thanks for your interest in contributing to Kanban! This project is in research preview, and we're focused on making the existing feature set rock-solid across platforms and agents before expanding scope. Community help is invaluable here.
+> **This repository is a modified fork of [cline/kanban](https://github.com/cline/kanban), and is not
+> affiliated with or endorsed by Cline Bot Inc.** Contributions here go to this fork only. If you want
+> your change in the official project, open it against
+> [cline/kanban](https://github.com/cline/kanban) instead — maintainers here cannot merge on their behalf,
+> and issues filed here are not seen by the upstream team.
+
+Thanks for your interest in contributing! This project is in research preview, and we're focused on making the existing feature set rock-solid across platforms and agents before expanding scope. Community help is invaluable here.
 
 ## What We're Looking For
 
@@ -13,11 +19,11 @@ We are actively looking for help with:
 - Bug fixes: anything that makes the current feature set more stable and reliable
 - Test coverage: adding tests for untested paths, especially platform-specific and agent-specific behavior
 
-We are not currently accepting feature PRs. If you have a feature idea, please open a [Feature Request discussion](https://github.com/cline/kanban/discussions/categories/feature-requests) instead. We may incorporate it into the roadmap, but the priority right now is stability and compatibility.
+We are not currently accepting feature PRs. If you have a feature idea, please open an [issue](https://github.com/angel-manuel/kanban/issues) instead. We may incorporate it into the roadmap, but the priority right now is stability and compatibility.
 
 ## Reporting Bugs
 
-Before opening a new issue, search [existing issues](https://github.com/cline/kanban/issues) to avoid duplicates. When filing a bug, include:
+Before opening a new issue, search [existing issues](https://github.com/angel-manuel/kanban/issues) to avoid duplicates. When filing a bug, include:
 
 - Your OS and version
 - Which CLI agent you're using (and its version)
@@ -25,7 +31,7 @@ Before opening a new issue, search [existing issues](https://github.com/cline/ka
 - Expected vs. actual behavior
 - Any relevant terminal output or screenshots
 
-If you discover a security vulnerability, please report it privately using [GitHub's security advisory tool](https://github.com/cline/kanban/security/advisories/new).
+If you discover a security vulnerability in this fork, please report it privately using [this repository's security advisory form](https://github.com/angel-manuel/kanban/security/advisories/new). If the vulnerability also affects upstream, please additionally report it to [cline/kanban](https://github.com/cline/kanban/security/advisories/new) so the original project can fix it too.
 
 ## Before Contributing
 
@@ -37,7 +43,7 @@ PRs without a corresponding issue may be closed.
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/cline/kanban.git
+   git clone https://github.com/angel-manuel/kanban.git
    cd kanban
    ```
 
@@ -90,10 +96,12 @@ Kanban is in foundation mode. Favor clear primitives and good tooling over early
 
 ## Community
 
-- [Discord](https://discord.gg/cline) (join the #kanban channel)
-- [Feature Requests](https://github.com/cline/kanban/discussions/categories/feature-requests)
-- [Issues](https://github.com/cline/kanban/issues)
+- [Issues](https://github.com/angel-manuel/kanban/issues) — for this fork
+- [Upstream project](https://github.com/cline/kanban) — the original, maintained by Cline Bot Inc.
+
+Cline Bot Inc.'s community channels (Discord, discussions, feature-request boards) are for the
+upstream project. Please do not take questions about this fork there.
 
 ## License
 
-By submitting a pull request, you agree that your contributions will be licensed under the project's [Apache 2.0 license](./LICENSE).
+By submitting a pull request, you agree that your contributions will be licensed under the project's [Apache 2.0 license](./LICENSE), the same license as the upstream work this fork is derived from.

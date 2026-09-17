@@ -211,4 +211,23 @@ describe("FeaturebaseFeedbackButton", () => {
 		});
 		expect(container.innerHTML).toBe("");
 	});
+
+	it("renders nothing when no Featurebase organization is configured", () => {
+		// This fork ships without FEATUREBASE_ORGANIZATION, so feedback must never be routed to
+		// the upstream project's board. Without an organization the button is hidden entirely,
+		// even for a fully authenticated Cline user.
+		vi.stubEnv("FEATUREBASE_ORGANIZATION", "");
+		const fbState = createFeaturebaseFeedbackState("ready").state;
+		act(() => {
+			root.render(
+				<FeaturebaseFeedbackButton
+					selectedAgentId={"cline"}
+					clineProviderSettings={authenticatedClineSettings}
+					featurebaseFeedbackState={fbState}
+				/>,
+			);
+		});
+		expect(container.innerHTML).toBe("");
+		vi.unstubAllEnvs();
+	});
 });

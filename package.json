@@ -1,7 +1,7 @@
 {
-  "name": "kanban",
+  "name": "@angel-manuel/kanban",
   "version": "0.1.70",
-  "description": "A kanban foundation for coding agents",
+  "description": "A kanban foundation for coding agents. Community fork of cline/kanban; not affiliated with or endorsed by Cline Bot Inc.",
   "publishConfig": {
     "access": "public",
     "provenance": true
@@ -13,14 +13,14 @@
     "task-management",
     "typescript"
   ],
-  "homepage": "https://github.com/cline/kanban",
+  "homepage": "https://github.com/angel-manuel/kanban",
   "bugs": {
-    "url": "https://github.com/cline/kanban/issues"
+    "url": "https://github.com/angel-manuel/kanban/issues"
   },
-  "author": "Cline",
+  "author": "Ángel Manuel Martín (https://github.com/angel-manuel)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cline/kanban"
+    "url": "git+https://github.com/angel-manuel/kanban.git"
   },
   "type": "module",
   "bin": {
@@ -50,7 +50,7 @@
     "build": "npm run clean && npm run web:build && node scripts/build.mjs && shx mkdir -p dist/web-ui && shx cp -r web-ui/dist/* dist/web-ui && node scripts/upload-sentry-sourcemaps.mjs && shx chmod +x dist/cli.js",
     "dogfood": "node scripts/dogfood.mjs",
     "link": "npm run build && npm link",
-    "unlink": "npm unlink -g kanban",
+    "unlink": "npm unlink -g @angel-manuel/kanban",
     "dev": "NODE_ENV=development tsx watch src/cli.ts",
     "dev:full": "node scripts/dev-full.mjs",
     "web:dev": "npm --prefix web-ui run dev",

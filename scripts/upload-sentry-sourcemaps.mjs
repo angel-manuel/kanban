@@ -3,9 +3,11 @@ import { cp, mkdir, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { relative, resolve, sep } from "node:path";
 
-const SENTRY_ORG = "cline-bot-inc-xi";
-const SENTRY_WEB_PROJECT = "kanban-react";
-const SENTRY_NODE_PROJECT = "kanban-node";
+// Configured per-fork. Nothing is uploaded unless SENTRY_ORG is set, so this fork can never
+// push sourcemaps into the upstream project's Sentry organization.
+const SENTRY_ORG = process.env.SENTRY_ORG?.trim();
+const SENTRY_WEB_PROJECT = process.env.SENTRY_WEB_PROJECT?.trim() || "kanban-react";
+const SENTRY_NODE_PROJECT = process.env.SENTRY_NODE_PROJECT?.trim() || "kanban-node";
 
 const scriptDir = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(scriptDir, "..");
@@ -48,6 +50,10 @@ async function main() {
 	const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN?.trim();
 	if (!sentryAuthToken) {
 		console.log("Skipping Sentry sourcemap upload because SENTRY_AUTH_TOKEN is not set.");
+		return;
+	}
+	if (!SENTRY_ORG) {
+		console.log("Skipping Sentry sourcemap upload because SENTRY_ORG is not set.");
 		return;
 	}
 

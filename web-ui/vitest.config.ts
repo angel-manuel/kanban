@@ -27,6 +27,10 @@ export default defineConfig({
 	},
 	test: {
 		environment: "jsdom",
+		// Exercise the telemetry-enabled paths; production builds ship these unset.
+		env: {
+			FEATUREBASE_ORGANIZATION: "test-org",
+		},
 		include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
 		passWithNoTests: true,
 		setupFiles: ["./vitest.setup.ts"],

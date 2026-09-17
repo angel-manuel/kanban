@@ -5,23 +5,28 @@ This package contains the Kanban frontend served by the runtime.
 ## Stack
 
 - React + TypeScript + Vite
-- Palantir Blueprint v6 (`@blueprintjs/core`, `@blueprintjs/icons`, `@blueprintjs/select`)
+- Tailwind CSS v4, Radix UI primitives, Lucide icons
 - Atlassian pragmatic drag-and-drop
 - Vitest
 - Playwright
 
 ## Telemetry
 
-PostHog telemetry is enabled in official release builds published from this repository.
-For local builds, forks, and source builds, telemetry is off unless you set a PostHog key.
+All telemetry in this fork is opt-in and **off by default**, including in release builds. This
+repository is an unaffiliated fork of [cline/kanban](https://github.com/cline/kanban), so it ships
+no analytics, error-reporting, or feedback destinations of its own — point them at your own
+projects or leave them unset. Never point them at Cline Bot Inc.'s accounts.
 
 1. Copy `web-ui/.env.example` to `web-ui/.env.local`.
-2. Set `POSTHOG_KEY` to your PostHog project key.
-3. Keep `POSTHOG_HOST` set to `https://data.cline.bot` unless you need a different ingestion host.
+2. Set `POSTHOG_KEY` **and** `POSTHOG_HOST` to your own PostHog project. Both are required; there
+   is no default host.
+3. Optionally set `SENTRY_DSN` (error reporting) and `FEATUREBASE_ORGANIZATION` (feedback widget).
 
-When `POSTHOG_KEY` is empty or unset, the app does not initialize PostHog.
+When `POSTHOG_KEY` or `POSTHOG_HOST` is empty, the app does not initialize PostHog. When
+`SENTRY_DSN` is empty, Sentry never initializes. When `FEATUREBASE_ORGANIZATION` is empty, the
+"Send feedback" button is hidden. See [Telemetry config](../DEVELOPMENT.md#telemetry-config).
 
-Current behavior:
+Current behavior when analytics are explicitly enabled:
 - Session replay is disabled.
 - Autocapture is disabled. This means PostHog does not automatically capture clicks, form edits, or other raw DOM interactions.
 - Pageview events are enabled for active user metrics.

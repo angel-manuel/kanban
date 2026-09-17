@@ -5,6 +5,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import type { RuntimeAgentId } from "../core/api-contract";
 import { isHomeAgentSessionId } from "../core/home-agent-session";
 import { resolveKanbanCommandParts } from "../core/kanban-command";
+import { KANBAN_PACKAGE_NAME } from "../core/kanban-package";
 import { buildShellCommandLine } from "../core/shell";
 import { detectAutoUpdateInstallation, UpdatePackageManager } from "../update/update";
 
@@ -99,7 +100,7 @@ export function resolveAppendSystemPromptCommandPrefix(
 
 	const installation = detectAutoUpdateInstallation({
 		currentVersion: options.currentVersion ?? KANBAN_VERSION,
-		packageName: "kanban",
+		packageName: KANBAN_PACKAGE_NAME,
 		entrypointPath,
 		cwd: options.cwd ?? process.cwd(),
 	});
@@ -109,16 +110,16 @@ export function resolveAppendSystemPromptCommandPrefix(
 	}
 
 	if (installation.packageManager === UpdatePackageManager.NPX) {
-		return "npx -y kanban";
+		return `npx -y ${KANBAN_PACKAGE_NAME}`;
 	}
 	if (installation.packageManager === UpdatePackageManager.PNPM) {
-		return "pnpm dlx kanban";
+		return `pnpm dlx ${KANBAN_PACKAGE_NAME}`;
 	}
 	if (installation.packageManager === UpdatePackageManager.YARN) {
-		return "yarn dlx kanban";
+		return `yarn dlx ${KANBAN_PACKAGE_NAME}`;
 	}
 	if (installation.packageManager === UpdatePackageManager.BUN) {
-		return "bun x kanban";
+		return `bun x ${KANBAN_PACKAGE_NAME}`;
 	}
 
 	return fallbackCommandPrefix;

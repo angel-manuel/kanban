@@ -196,7 +196,7 @@ describe("useFeaturebaseFeedbackWidget", () => {
 		expect(initCall).toBeTruthy();
 		expect(initCall?.[1]).toEqual(
 			expect.objectContaining({
-				organization: "cline",
+				organization: "test-org",
 				theme: "dark",
 				locale: "en",
 				metadata: { app: "kanban" },
